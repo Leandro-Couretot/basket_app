@@ -31,7 +31,9 @@ def login(email, password, device_token):
         f"{AUTH_URL}/token?grant_type=password",
         json={"email": email, "password": password, "gotrue_meta_security": {}},
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        print(f"ERROR login {resp.status_code}: {resp.text}")
+        resp.raise_for_status()
     token_data = resp.json()
     access_token = token_data["access_token"]
     print("Login OK, verificando dispositivo...")
