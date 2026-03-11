@@ -8,12 +8,18 @@ from google.oauth2.service_account import Credentials
 
 AUTH_URL = "https://auth.cocos.capital/auth/v1"
 COCOS_API = "https://api.cocos.capital"
+SUPABASE_ANON_KEY = (
+    "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.ewogICJyb2xlIjogImFub24iLAogICJpc3MiO"
+    "iAic3VwYWJhc2UiLAogICJpYXQiOiAxNzI0NzA5NjAwLAogICJleHAiOiAxODgyNDc2MDAwCn0"
+    ".GieFvIDlSbRw6-KvFX8xPEzqzhXgIQ0Hc-ELKvrVirs"
+)
 
 
 def login(email, password, device_token):
     session = requests.Session()
     session.headers.update({
         "Content-Type": "application/json",
+        "apikey": SUPABASE_ANON_KEY,
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
         "Origin": "https://app.cocos.capital",
         "Referer": "https://app.cocos.capital/",
