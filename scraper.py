@@ -1,6 +1,6 @@
 import json
 import os
-import requests
+from curl_cffi import requests
 from datetime import datetime, timezone, timedelta
 
 import gspread
@@ -16,11 +16,10 @@ SUPABASE_ANON_KEY = (
 
 
 def login(email, password, device_token):
-    session = requests.Session()
+    session = requests.Session(impersonate="chrome120")
     session.headers.update({
         "Content-Type": "application/json",
         "apikey": SUPABASE_ANON_KEY,
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
         "Origin": "https://app.cocos.capital",
         "Referer": "https://app.cocos.capital/",
     })
@@ -44,7 +43,9 @@ def login(email, password, device_token):
         headers={"Authorization": f"Bearer {access_token}"},
         json={},
     )
-    challenge_resp.raise_for_status()
+    if not challenge_resp.ok:
+        print(f"ERROR challenge {challenge_resp.status_code}: {challenge_resp.text}")
+        challenge_resp.raise_for_status()
     challenge_id = challenge_resp.json()["id"]
 
     # Step 3: verify device with trusted device token
@@ -53,24 +54,28 @@ def login(email, password, device_token):
         headers={"Authorization": f"Bearer {access_token}"},
         json={"code": device_token, "challenge_id": challenge_id},
     )
-    verify_resp.raise_for_status()
+    if not verify_resp.ok:
+        print(f"ERROR verify {verify_resp.status_code}: {verify_resp.text}")
+        verify_resp.raise_for_status()
     full_token = verify_resp.json()["access_token"]
     print("Dispositivo verificado.")
     return full_token
 
 
 def get_balance(access_token, account_id):
-    resp = requests.get(
+    session = requests.Session(impersonate="chrome120")
+    resp = session.get(
         f"{COCOS_API}/api/portfolio/balance?currency=ARS&period=MAX",
         headers={
             "Authorization": f"Bearer {access_token}",
             "x-account-id": account_id,
-            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
             "Origin": "https://app.cocos.capital",
             "Referer": "https://app.cocos.capital/",
         },
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        print(f"ERROR balance {resp.status_code}: {resp.text}")
+        resp.raise_for_status()
     return resp.json()["totalBalance"]
 
 
