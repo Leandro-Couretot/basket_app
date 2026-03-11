@@ -1,0 +1,33 @@
+name: Daily Balance Monitor
+
+on:
+  schedule:
+    - cron: "30 21 * * 1-5"  # 18:30 ARS (UTC-3), lunes a viernes
+  workflow_dispatch:  # trigger manual para testing
+
+jobs:
+  capture-balance:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Playwright browsers
+        run: playwright install --with-deps chromium
+
+      - name: Run balance scraper
+        env:
+          COCOS_EMAIL: ${{ secrets.COCOS_EMAIL }}
+          COCOS_PASSWORD: ${{ secrets.COCOS_PASSWORD }}
+          GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        run: python scraper.py
