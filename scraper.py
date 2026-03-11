@@ -6,24 +6,31 @@ from datetime import datetime, timezone, timedelta
 import gspread
 from google.oauth2.service_account import Credentials
 from playwright.async_api import async_playwright
+from playwright_stealth import stealth_async
 
 
 async def main():
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            args=["--no-sandbox", "--disable-dev-shm-usage"],
+            args=[
+                "--no-sandbox",
+                "--disable-dev-shm-usage",
+                "--disable-blink-features=AutomationControlled",
+            ],
         )
         context = await browser.new_context(
             user_agent=(
-                "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            )
+            ),
+            viewport={"width": 1280, "height": 720},
         )
         page = await context.new_page()
+        await stealth_async(page)
 
         print("Navegando a Cocos Capital...")
-        await page.goto("https://app.cocos.capital", wait_until="domcontentloaded")
+        await page.goto("https://app.cocos.capital", wait_until="networkidle", timeout=60000)
 
         # Esperar hasta 60s a que aparezca el campo email
         print("Esperando formulario de login...")
