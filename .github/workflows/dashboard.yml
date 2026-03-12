@@ -1,34 +1,26 @@
 name: "Dashboard de Balance 📊"
 
-# ─── TRIGGERS ────────────────────────────────────────────────────────────────
-# Podés ejecutarlo manualmente desde la UI de GitHub con un formulario.
-# También corre automáticamente cada vez que el scraper diario termina.
+# ─── TRIGGER ──────────────────────────────────────────────────────────────────
+# Ejecutalo manualmente desde la UI: Actions → Dashboard de Balance → Run workflow
 on:
   workflow_dispatch:
     inputs:
+      balance:
+        description: "Tu balance actual en ARS (ej: 1250000.50)"
+        type: string
+        required: true
       publicar_issue:
         description: "Crear/actualizar un Issue con el reporte"
         type: boolean
         default: true
-  workflow_run:
-    workflows: ["Daily Balance Monitor"]
-    types: [completed]
 
 # ─── JOBS ─────────────────────────────────────────────────────────────────────
-# Tres jobs encadenados con needs: que corren en secuencia.
-# GitHub Actions los muestra como un pipeline visual en la UI.
 jobs:
 
   # ── JOB 1 ──────────────────────────────────────────────────────────────────
-  fetch-balance:
-    name: "1 · Obtener balance de Cocos"
+  registrar-balance:
+    name: "1 · Registrar balance en Google Sheets"
     runs-on: ubuntu-latest
-
-    # outputs: permite pasar valores de un job al siguiente
-    outputs:
-      balance: ${{ steps.read.outputs.balance }}
-      date: ${{ steps.read.outputs.date }}
-      scraper_ok: ${{ steps.scrape.outcome }}
 
     steps:
       - uses: actions/checkout@v4
@@ -40,53 +32,30 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      # continue-on-error: true → si el scraper falla, el job sigue igual
-      - name: Ejecutar scraper
-        id: scrape
-        continue-on-error: true
+      - name: Escribir balance en el Sheet
         env:
-          COCOS_EMAIL: ${{ secrets.COCOS_EMAIL }}
-          COCOS_PASSWORD: ${{ secrets.COCOS_PASSWORD }}
-          COCOS_DEVICE_TOKEN: ${{ secrets.COCOS_DEVICE_TOKEN }}
-          COCOS_ACCOUNT_ID: ${{ secrets.COCOS_ACCOUNT_ID }}
+          BALANCE: ${{ inputs.balance }}
           GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
-        run: python scraper.py
+        run: python write_balance.py
 
-      # Leer el JSON que escribió el scraper y pasarlo como output del job
-      - name: Leer balance guardado
-        id: read
-        if: steps.scrape.outcome == 'success'
-        run: |
-          BALANCE=$(python -c "import json; d=json.load(open('balance_output.json')); print(d['balance'])")
-          DATE=$(python -c "import json; d=json.load(open('balance_output.json')); print(d['date'])")
-          echo "balance=$BALANCE" >> $GITHUB_OUTPUT
-          echo "date=$DATE" >> $GITHUB_OUTPUT
-
-      # GITHUB_STEP_SUMMARY → aparece en la tab "Summary" del workflow en la UI
-      - name: Escribir resumen del paso
+      - name: Resumen del paso
         run: |
           {
-            echo "## 💰 Scraper de Cocos Capital"
+            echo "## ✅ Balance registrado"
             echo ""
-            if [ "${{ steps.scrape.outcome }}" = "success" ]; then
-              echo "✅ **Scraper ejecutado correctamente**"
-              echo ""
-              echo "| Campo | Valor |"
-              echo "|:------|------:|"
-              echo "| Balance | \`${{ steps.read.outputs.balance }}\` ARS |"
-              echo "| Fecha | ${{ steps.read.outputs.date }} |"
-              echo "| Runner | \`ubuntu-latest\` |"
-            else
-              echo "⚠️ **El scraper falló** (se usarán los datos históricos del Sheet)"
-            fi
+            echo "| Campo | Valor |"
+            echo "|:------|------:|"
+            echo "| Balance | \`$${{ inputs.balance }}\` ARS |"
+            echo "| Guardado en | Google Sheets |"
+            echo "| Ejecutado por | @${{ github.actor }} |"
           } >> $GITHUB_STEP_SUMMARY
 
   # ── JOB 2 ──────────────────────────────────────────────────────────────────
-  generate-report:
+  generar-reporte:
     name: "2 · Generar reporte histórico"
     runs-on: ubuntu-latest
-    needs: fetch-balance  # espera a que termine el job anterior
+    needs: registrar-balance  # espera a que el job 1 termine
 
     steps:
       - uses: actions/checkout@v4
@@ -98,42 +67,39 @@ jobs:
 
       - run: pip install -r requirements.txt
 
-      - name: Generar reporte desde Google Sheets
+      - name: Leer historial y generar reporte
         env:
           GOOGLE_SHEETS_ID: ${{ secrets.GOOGLE_SHEETS_ID }}
           GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: python report.py
 
-      # El contenido del report.md aparece directamente en la UI de Actions
-      - name: Publicar reporte en el Summary
+      # El reporte completo aparece en la tab "Summary" del workflow
+      - name: Mostrar reporte en el Summary
         run: cat report.md >> $GITHUB_STEP_SUMMARY
 
-      # artifacts: archivos descargables desde la UI, guardados 90 días
+      # Archivo descargable desde la UI de Actions durante 90 días
       - name: Subir reporte como artefacto
         uses: actions/upload-artifact@v4
         with:
-          name: reporte-balance-${{ github.run_number }}
+          name: reporte-run-${{ github.run_number }}
           path: report.md
           retention-days: 90
 
   # ── JOB 3 ──────────────────────────────────────────────────────────────────
-  publish-issue:
+  publicar-issue:
     name: "3 · Publicar Issue en GitHub"
     runs-on: ubuntu-latest
-    needs: generate-report  # espera al job anterior
-    # if: → este job solo corre si se activó el input (o si vino del workflow diario)
+    needs: generar-reporte
     if: ${{ inputs.publicar_issue != false }}
 
-    # permissions: necesario para que el GITHUB_TOKEN pueda crear issues
     permissions:
       issues: write
 
     steps:
-      # Bajar el artifact que subió el job anterior
       - name: Descargar reporte
         uses: actions/download-artifact@v4
         with:
-          name: reporte-balance-${{ github.run_number }}
+          name: reporte-run-${{ github.run_number }}
 
       - name: Crear label si no existe
         env:
@@ -144,7 +110,7 @@ jobs:
             --description "Reporte automático de balance" \
             --repo "${{ github.repository }}" 2>/dev/null || true
 
-      - name: Crear o actualizar Issue con el reporte
+      - name: Crear o actualizar Issue
         id: issue
         env:
           GH_TOKEN: ${{ github.token }}
@@ -152,7 +118,6 @@ jobs:
           TITLE="📊 Dashboard de Balance — Cocos Capital"
           BODY=$(cat report.md)
 
-          # Buscar si ya existe un issue abierto con el label
           EXISTING=$(gh issue list \
             --repo "${{ github.repository }}" \
             --label "balance-report" \
@@ -161,14 +126,12 @@ jobs:
             --jq '.[0].number')
 
           if [ -n "$EXISTING" ]; then
-            echo "Actualizando issue #$EXISTING..."
             gh issue edit "$EXISTING" \
               --repo "${{ github.repository }}" \
               --body "$BODY"
             echo "url=https://github.com/${{ github.repository }}/issues/$EXISTING" >> $GITHUB_OUTPUT
             echo "action=actualizado" >> $GITHUB_OUTPUT
           else
-            echo "Creando nuevo issue..."
             URL=$(gh issue create \
               --repo "${{ github.repository }}" \
               --title "$TITLE" \
@@ -183,5 +146,5 @@ jobs:
           {
             echo "## 📋 Issue ${{ steps.issue.outputs.action }}"
             echo ""
-            echo "➡️ [${{ github.repository }}/issues](${{ steps.issue.outputs.url }})"
+            echo "➡️ [${{ steps.issue.outputs.url }}](${{ steps.issue.outputs.url }})"
           } >> $GITHUB_STEP_SUMMARY
