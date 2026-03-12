@@ -100,6 +100,9 @@ def main():
     sheet.append_row([date_str, total_balance])
     print(f"Fila agregada: {date_str} | {total_balance}")
 
+    with open("balance_output.json", "w") as f:
+        json.dump({"balance": total_balance, "date": date_str}, f)
+
 
 if __name__ == "__main__":
     main()
