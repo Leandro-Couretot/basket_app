@@ -1,269 +1,227 @@
 import 'package:flutter/material.dart';
-import '../models/team_standing.dart';
-import '../utils/csv_parser.dart';
+import '../main.dart';
 
-class StandingsScreen extends StatefulWidget {
-  const StandingsScreen({super.key});
+class _Standing {
+  final int pos;
+  final String team;
+  final int played;
+  final int wins;
+  final int losses;
+  final int pointsFor;
+  final int pointsAgainst;
 
-  @override
-  State<StandingsScreen> createState() => _StandingsScreenState();
+  const _Standing({
+    required this.pos,
+    required this.team,
+    required this.played,
+    required this.wins,
+    required this.losses,
+    required this.pointsFor,
+    required this.pointsAgainst,
+  });
+
+  int get diff => pointsFor - pointsAgainst;
+  double get pct => played > 0 ? wins / played : 0;
 }
 
-class _StandingsScreenState extends State<StandingsScreen>
-    with SingleTickerProviderStateMixin {
-  late TabController _tabController;
-  List<TeamStanding> eastStandings = [];
-  List<TeamStanding> westStandings = [];
-  bool isLoading = true;
+class StandingsScreen extends StatelessWidget {
+  const StandingsScreen({super.key});
 
-  @override
-  void initState() {
-    super.initState();
-    _tabController = TabController(length: 2, vsync: this);
-    _loadData();
-  }
-
-  Future<void> _loadData() async {
-    final east = await CsvParser.loadStandings('assets/data/nba_standings_east.csv');
-    final west = await CsvParser.loadStandings('assets/data/nba_standings_west.csv');
-    setState(() {
-      eastStandings = east;
-      westStandings = west;
-      isLoading = false;
-    });
-  }
-
-  @override
-  void dispose() {
-    _tabController.dispose();
-    super.dispose();
-  }
+  static const _standings = [
+    _Standing(pos: 1, team: 'Lugano 80', played: 5, wins: 4, losses: 1, pointsFor: 392, pointsAgainst: 310),
+    _Standing(pos: 2, team: 'Achaval City', played: 5, wins: 3, losses: 2, pointsFor: 358, pointsAgainst: 340),
+    _Standing(pos: 3, team: 'Slow Motion', played: 4, wins: 2, losses: 2, pointsFor: 290, pointsAgainst: 285),
+    _Standing(pos: 4, team: 'Super Ácidos', played: 5, wins: 1, losses: 4, pointsFor: 310, pointsAgainst: 415),
+  ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0A0A1A),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF1A1A2E),
-        title: Row(
-          children: [
-            const Icon(Icons.sports_basketball, color: Color(0xFFFF6B00), size: 28),
-            const SizedBox(width: 10),
-            const Text(
-              'NBA Standings',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-                fontSize: 22,
+        title: const Text('Tabla de Posiciones'),
+        actions: [
+          IconButton(icon: const Icon(Icons.filter_alt_outlined), onPressed: () {}),
+        ],
+      ),
+      body: Column(
+        children: [
+          _TournamentSelector(),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  _StandingsTable(standings: _standings),
+                  const SizedBox(height: 24),
+                  _LastUpdated(),
+                ],
               ),
             ),
-          ],
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          indicatorColor: const Color(0xFFFF6B00),
-          labelColor: const Color(0xFFFF6B00),
-          unselectedLabelColor: Colors.grey,
-          tabs: const [
-            Tab(text: 'ESTE'),
-            Tab(text: 'OESTE'),
-          ],
-        ),
-      ),
-      body: isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: Color(0xFFFF6B00)),
-            )
-          : TabBarView(
-              controller: _tabController,
-              children: [
-                _buildStandingsTab(eastStandings),
-                _buildStandingsTab(westStandings),
-              ],
-            ),
-    );
-  }
-
-  Widget _buildStandingsTab(List<TeamStanding> standings) {
-    return Column(
-      children: [
-        _buildLegend(),
-        _buildTableHeader(),
-        Expanded(
-          child: ListView.builder(
-            itemCount: standings.length,
-            itemBuilder: (context, index) {
-              return _buildTeamRow(standings[index], index);
-            },
           ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildLegend() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          _legendDot(const Color(0xFF00C853), 'Playoffs'),
-          const SizedBox(width: 16),
-          _legendDot(const Color(0xFF2979FF), 'Play-In'),
         ],
       ),
     );
   }
+}
 
-  Widget _legendDot(Color color, String label) {
-    return Row(
-      children: [
-        Container(
-          width: 12,
-          height: 12,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 4),
-        Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
-      ],
-    );
-  }
-
-  Widget _buildTableHeader() {
+class _TournamentSelector extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-      color: const Color(0xFF1A1A2E),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      color: AppTheme.surface,
       child: Row(
         children: [
-          _headerCell('#', 30),
-          _headerCell('EQUIPO', 0, flex: 3),
-          _headerCell('G', 36),
-          _headerCell('P', 36),
-          _headerCell('%', 52),
-          _headerCell('DIF', 44),
-          _headerCell('ÚLT10', 52),
-          _headerCell('RACHA', 52),
+          const Icon(Icons.emoji_events_rounded, color: AppTheme.primary, size: 16),
+          const SizedBox(width: 8),
+          const Text('Torneo Apertura 2025', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
+          const Spacer(),
+          const Icon(Icons.expand_more, color: AppTheme.textSecondary),
         ],
       ),
     );
   }
+}
 
-  Widget _headerCell(String text, double width, {int flex = 0}) {
-    final style = const TextStyle(
-      color: Colors.grey,
-      fontSize: 11,
-      fontWeight: FontWeight.bold,
-      letterSpacing: 0.5,
-    );
-    if (flex > 0) {
-      return Expanded(
-        flex: flex,
-        child: Text(text, style: style),
-      );
-    }
-    return SizedBox(
-      width: width,
-      child: Text(text, style: style, textAlign: TextAlign.center),
-    );
-  }
+class _StandingsTable extends StatelessWidget {
+  final List<_Standing> standings;
 
-  Widget _buildTeamRow(TeamStanding team, int index) {
-    Color? rowAccent;
-    if (team.isPlayoffSpot) rowAccent = const Color(0xFF00C853);
-    if (team.isPlayInSpot) rowAccent = const Color(0xFF2979FF);
+  const _StandingsTable({required this.standings});
 
-    final bool isEven = index % 2 == 0;
-
+  @override
+  Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: isEven ? const Color(0xFF111122) : const Color(0xFF0D0D1A),
-        border: rowAccent != null
-            ? Border(left: BorderSide(color: rowAccent, width: 3))
-            : null,
+        color: AppTheme.surfaceElevated,
+        borderRadius: BorderRadius.circular(16),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: Column(
+        children: [
+          _TableHeader(),
+          const Divider(height: 1),
+          ...standings.asMap().entries.map((e) => Column(
+            children: [
+              _TeamRow(standing: e.value, index: e.key),
+              if (e.key < standings.length - 1) const Divider(height: 1),
+            ],
+          )),
+        ],
+      ),
+    );
+  }
+}
+
+class _TableHeader extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      child: Row(
+        children: const [
+          SizedBox(width: 28, child: Text('#', style: _headerStyle, textAlign: TextAlign.center)),
+          SizedBox(width: 10),
+          Expanded(child: Text('EQUIPO', style: _headerStyle)),
+          SizedBox(width: 36, child: Text('PJ', style: _headerStyle, textAlign: TextAlign.center)),
+          SizedBox(width: 36, child: Text('G', style: _headerStyle, textAlign: TextAlign.center)),
+          SizedBox(width: 36, child: Text('P', style: _headerStyle, textAlign: TextAlign.center)),
+          SizedBox(width: 44, child: Text('PF', style: _headerStyle, textAlign: TextAlign.center)),
+          SizedBox(width: 44, child: Text('PC', style: _headerStyle, textAlign: TextAlign.center)),
+          SizedBox(width: 44, child: Text('DIF', style: _headerStyle, textAlign: TextAlign.center)),
+        ],
+      ),
+    );
+  }
+
+  static const _headerStyle = TextStyle(
+    color: AppTheme.textSecondary,
+    fontSize: 11,
+    fontWeight: FontWeight.w700,
+    letterSpacing: 0.5,
+  );
+}
+
+class _TeamRow extends StatelessWidget {
+  final _Standing standing;
+  final int index;
+
+  const _TeamRow({required this.standing, required this.index});
+
+  @override
+  Widget build(BuildContext context) {
+    final isFirst = standing.pos == 1;
+    final diffPositive = standing.diff > 0;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: isFirst ? AppTheme.primary.withOpacity(0.06) : Colors.transparent,
+        borderRadius: index == 0
+            ? const BorderRadius.vertical(top: Radius.circular(16))
+            : BorderRadius.zero,
+      ),
       child: Row(
         children: [
-          // Position
           SizedBox(
-            width: 30,
+            width: 28,
+            child: isFirst
+                ? const Icon(Icons.emoji_events_rounded, color: AppTheme.primary, size: 16)
+                : Text(
+                    '${standing.pos}',
+                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.w600),
+                    textAlign: TextAlign.center,
+                  ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
             child: Text(
-              '${team.pos}',
-              style: const TextStyle(
-                color: Colors.white70,
+              standing.team,
+              style: TextStyle(
+                color: isFirst ? AppTheme.textPrimary : AppTheme.textPrimary,
+                fontSize: 14,
+                fontWeight: isFirst ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
+          _cell('${standing.played}', AppTheme.textSecondary),
+          _cell('${standing.wins}', AppTheme.success, width: 36),
+          _cell('${standing.losses}', AppTheme.danger, width: 36),
+          _cell('${standing.pointsFor}', AppTheme.textSecondary, width: 44),
+          _cell('${standing.pointsAgainst}', AppTheme.textSecondary, width: 44),
+          SizedBox(
+            width: 44,
+            child: Text(
+              diffPositive ? '+${standing.diff}' : '${standing.diff}',
+              style: TextStyle(
+                color: diffPositive ? AppTheme.success : AppTheme.danger,
                 fontSize: 13,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w700,
               ),
               textAlign: TextAlign.center,
             ),
           ),
-          // Team name
-          Expanded(
-            flex: 3,
-            child: Text(
-              team.team,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 13,
-                fontWeight: FontWeight.w500,
-              ),
-              overflow: TextOverflow.ellipsis,
-            ),
-          ),
-          // W
-          _statCell('${team.wins}', Colors.white),
-          // L
-          _statCell('${team.losses}', Colors.white70),
-          // PCT
-          _statCell(
-            team.pct.toStringAsFixed(3),
-            const Color(0xFFFF6B00),
-            width: 52,
-          ),
-          // GB
-          _statCell(
-            team.gb == 0.0 ? '-' : team.gb.toStringAsFixed(1),
-            Colors.grey,
-            width: 44,
-          ),
-          // Last 10
-          _statCell(team.last10, Colors.white70, width: 52),
-          // Streak
-          SizedBox(
-            width: 52,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: team.isWinStreak
-                    ? const Color(0xFF00C853).withOpacity(0.2)
-                    : const Color(0xFFD50000).withOpacity(0.2),
-                borderRadius: BorderRadius.circular(4),
-              ),
-              child: Text(
-                team.streak,
-                style: TextStyle(
-                  color: team.isWinStreak
-                      ? const Color(0xFF00C853)
-                      : const Color(0xFFFF4444),
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _statCell(String value, Color color, {double width = 36}) {
+  Widget _cell(String text, Color color, {double width = 36}) {
     return SizedBox(
       width: width,
-      child: Text(
-        value,
-        style: TextStyle(color: color, fontSize: 13),
-        textAlign: TextAlign.center,
-      ),
+      child: Text(text, style: TextStyle(color: color, fontSize: 13), textAlign: TextAlign.center),
+    );
+  }
+}
+
+class _LastUpdated extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: const [
+        Icon(Icons.update_rounded, color: AppTheme.textSecondary, size: 13),
+        SizedBox(width: 4),
+        Text('Actualizado tras fecha 2', style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+      ],
     );
   }
 }
