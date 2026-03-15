@@ -7,7 +7,13 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
   build-and-preview:
@@ -24,33 +30,43 @@ jobs:
         working-directory: basketball_stats
         run: flutter pub get
 
-      - name: Build web (preview)
+      - name: Build preview (current branch)
         working-directory: basketball_stats
         run: flutter build web --base-href /preview/
 
-      - name: Deploy preview to gh-pages subfolder
+      - name: Save preview build
+        run: cp -r basketball_stats/build/web /tmp/preview-build
+
+      - name: Checkout master for production build
+        uses: actions/checkout@v4
+        with:
+          ref: master
+          clean: false
+
+      - name: Build production (master)
+        working-directory: basketball_stats
+        run: flutter build web --base-href /
+
+      - name: Assemble combined site
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          mkdir -p _site
+          cp -r basketball_stats/build/web/. _site/
+          cp -r /tmp/preview-build _site/preview
+          # CNAME must be at root
+          cp basketball_stats/web/CNAME _site/CNAME
 
-          # Stash the built files
-          cp -r basketball_stats/build/web /tmp/preview-build
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
 
-          # Switch to gh-pages branch
-          git fetch origin gh-pages
-          git checkout gh-pages
-
-          # Remove old preview and copy new build
-          rm -rf preview
-          cp -r /tmp/preview-build preview
-
-          # Remove CNAME from inside preview (it belongs at root)
-          rm -f preview/CNAME
-
-          # Ensure CNAME is at root for custom domain
-          echo "basketapp.pluxow.com" > CNAME
-
-          # Commit and push (only if there are changes)
-          git add preview/ CNAME
-          git diff --cached --quiet || git commit -m "Deploy preview [skip ci]"
-          git push origin gh-pages
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build-and-preview
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
