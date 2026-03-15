@@ -1,0 +1,37 @@
+name: Deploy Flutter Web Preview
+
+on:
+  push:
+    branches:
+      - 'claude/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.41.4'
+          channel: 'stable'
+
+      - name: Install dependencies
+        working-directory: basketball_stats
+        run: flutter pub get
+
+      - name: Build web (preview)
+        working-directory: basketball_stats
+        run: flutter build web --base-href /preview/
+
+      - name: Deploy to gh-pages /preview subfolder
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: basketball_stats/build/web
+          destination_dir: preview
+          keep_files: true
