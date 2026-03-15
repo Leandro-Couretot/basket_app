@@ -28,10 +28,23 @@ jobs:
         working-directory: basketball_stats
         run: flutter build web --base-href /preview/
 
-      - name: Deploy to gh-pages /preview subfolder
-        uses: peaceiris/actions-gh-pages@v4
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: basketball_stats/build/web
-          destination_dir: preview
-          keep_files: true
+      - name: Deploy preview to gh-pages subfolder
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Stash the built files
+          cp -r basketball_stats/build/web /tmp/preview-build
+
+          # Switch to gh-pages branch (already exists with production site)
+          git fetch origin gh-pages
+          git checkout gh-pages
+
+          # Remove old preview and copy new build
+          rm -rf preview
+          cp -r /tmp/preview-build preview
+
+          # Commit and push (only if there are changes)
+          git add preview/
+          git diff --cached --quiet || git commit -m "Deploy preview [skip ci]"
+          git push origin gh-pages
