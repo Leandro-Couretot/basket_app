@@ -36,7 +36,7 @@ jobs:
           # Stash the built files
           cp -r basketball_stats/build/web /tmp/preview-build
 
-          # Switch to gh-pages branch (already exists with production site)
+          # Switch to gh-pages branch
           git fetch origin gh-pages
           git checkout gh-pages
 
@@ -44,7 +44,13 @@ jobs:
           rm -rf preview
           cp -r /tmp/preview-build preview
 
+          # Remove CNAME from inside preview (it belongs at root)
+          rm -f preview/CNAME
+
+          # Ensure CNAME is at root for custom domain
+          echo "basketapp.pluxow.com" > CNAME
+
           # Commit and push (only if there are changes)
-          git add preview/
+          git add preview/ CNAME
           git diff --cached --quiet || git commit -m "Deploy preview [skip ci]"
           git push origin gh-pages
