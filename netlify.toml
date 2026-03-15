@@ -1,0 +1,7 @@
+[build]
+  base = "basketball_stats"
+  publish = "build/web"
+  command = "git clone https://github.com/flutter/flutter.git --depth 1 -b stable $HOME/flutter && $HOME/flutter/bin/flutter pub get && $HOME/flutter/bin/flutter build web --release"
+
+[build.environment]
+  FLUTTER_VERSION = "stable"

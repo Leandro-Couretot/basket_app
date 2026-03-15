@@ -1,0 +1,19 @@
+name: basketball_stats
+description: NBA Basketball Statistics App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  csv: ^6.0.0
+  fl_chart: ^0.68.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/data/nba_standings_east.csv
+    - assets/data/nba_standings_west.csv
