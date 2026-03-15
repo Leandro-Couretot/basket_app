@@ -32,7 +32,10 @@ jobs:
 
       - name: Build web
         working-directory: basketball_stats
-        run: flutter build web --base-href /cocostest/
+        run: flutter build web --base-href /
+
+      - name: Copy CNAME to build output
+        run: cp basketball_stats/web/CNAME basketball_stats/build/web/CNAME
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
