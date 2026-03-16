@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'screens/shell_screen.dart';
+import 'screens/role_selection_screen.dart';
+
+enum AppRole { admin, player }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,7 +22,7 @@ class BEAStatsApp extends StatelessWidget {
       title: 'BEA Stats',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.dark(),
-      home: const ShellScreen(),
+      home: const RoleSelectionScreen(),
     );
   }
 }

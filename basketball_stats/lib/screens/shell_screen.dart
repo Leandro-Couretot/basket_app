@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import '../main.dart';
+import 'admin_screen.dart';
 import 'dashboard_screen.dart';
 import 'fixture_screen.dart';
 import 'standings_screen.dart';
 import 'teams_screen.dart';
 
 class ShellScreen extends StatefulWidget {
-  const ShellScreen({super.key});
+  final AppRole role;
+  const ShellScreen({super.key, required this.role});
 
   @override
   State<ShellScreen> createState() => _ShellScreenState();
@@ -15,11 +17,12 @@ class ShellScreen extends StatefulWidget {
 class _ShellScreenState extends State<ShellScreen> {
   int _currentIndex = 0;
 
-  final List<Widget> _screens = const [
-    DashboardScreen(),
-    FixtureScreen(),
+  late final List<Widget> _screens = [
+    DashboardScreen(role: widget.role),
+    FixtureScreen(role: widget.role),
     StandingsScreen(),
-    TeamsScreen(),
+    TeamsScreen(role: widget.role),
+    if (widget.role == AppRole.admin) const AdminScreen(),
   ];
 
   @override
@@ -32,6 +35,7 @@ class _ShellScreenState extends State<ShellScreen> {
       bottomNavigationBar: _BottomNav(
         currentIndex: _currentIndex,
         onTap: (i) => setState(() => _currentIndex = i),
+        isAdmin: widget.role == AppRole.admin,
       ),
     );
   }
@@ -40,8 +44,9 @@ class _ShellScreenState extends State<ShellScreen> {
 class _BottomNav extends StatelessWidget {
   final int currentIndex;
   final ValueChanged<int> onTap;
+  final bool isAdmin;
 
-  const _BottomNav({required this.currentIndex, required this.onTap});
+  const _BottomNav({required this.currentIndex, required this.onTap, required this.isAdmin});
 
   @override
   Widget build(BuildContext context) {
@@ -60,6 +65,7 @@ class _BottomNav extends StatelessWidget {
               _NavItem(icon: Icons.calendar_month_rounded, label: 'Fixture', index: 1, currentIndex: currentIndex, onTap: onTap),
               _NavItem(icon: Icons.emoji_events_rounded, label: 'Posiciones', index: 2, currentIndex: currentIndex, onTap: onTap),
               _NavItem(icon: Icons.groups_rounded, label: 'Equipos', index: 3, currentIndex: currentIndex, onTap: onTap),
+              if (isAdmin) _NavItem(icon: Icons.admin_panel_settings_rounded, label: 'Admin', index: 4, currentIndex: currentIndex, onTap: onTap),
             ],
           ),
         ),
@@ -99,11 +105,7 @@ class _NavItem extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: selected ? AppTheme.primary : AppTheme.textSecondary,
-              size: 24,
-            ),
+            Icon(icon, color: selected ? AppTheme.primary : AppTheme.textSecondary, size: 24),
             const SizedBox(height: 3),
             Text(
               label,

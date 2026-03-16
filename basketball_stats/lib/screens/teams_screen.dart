@@ -12,7 +12,8 @@ const _teamColors = [
 ];
 
 class TeamsScreen extends StatefulWidget {
-  const TeamsScreen({super.key});
+  final AppRole role;
+  const TeamsScreen({super.key, required this.role});
 
   @override
   State<TeamsScreen> createState() => _TeamsScreenState();
@@ -114,12 +115,6 @@ class _TeamsScreenState extends State<TeamsScreen> {
                 ),
               ],
             ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () {},
-        backgroundColor: AppTheme.primary,
-        icon: const Icon(Icons.add, color: Colors.white),
-        label: const Text('Nuevo equipo', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-      ),
     );
   }
 }
