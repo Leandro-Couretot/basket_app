@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
 
 class FixtureScreen extends StatefulWidget {
@@ -10,19 +11,46 @@ class FixtureScreen extends StatefulWidget {
 
 class _FixtureScreenState extends State<FixtureScreen> {
   int _selectedRound = 1;
+  List<Map<String, dynamic>> _matches = [];
+  Map<String, String> _teamNames = {};
+  List<int> _rounds = [];
+  bool _loading = true;
 
-  final List<_MockMatch> _matches = const [
-    _MockMatch(round: 1, homeTeam: 'Lugano 80', awayTeam: 'Super Ácidos', homeScore: 84, awayScore: 37, date: '21/09/2025', finished: true),
-    _MockMatch(round: 1, homeTeam: 'Achaval City', awayTeam: 'Slow Motion', homeScore: 71, awayScore: 65, date: '21/09/2025', finished: true),
-    _MockMatch(round: 2, homeTeam: 'Super Ácidos', awayTeam: 'Slow Motion', date: '28/09/2025', finished: false),
-    _MockMatch(round: 2, homeTeam: 'Lugano 80', awayTeam: 'Achaval City', date: '28/09/2025', finished: false),
-    _MockMatch(round: 3, homeTeam: 'Slow Motion', awayTeam: 'Lugano 80', date: '05/10/2025', finished: false),
-    _MockMatch(round: 3, homeTeam: 'Achaval City', awayTeam: 'Super Ácidos', date: '05/10/2025', finished: false),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadFixture();
+  }
 
-  List<int> get _rounds => _matches.map((m) => m.round).toSet().toList()..sort();
+  Future<void> _loadFixture() async {
+    final client = Supabase.instance.client;
 
-  List<_MockMatch> get _filtered => _matches.where((m) => m.round == _selectedRound).toList();
+    final season = await client.from('seasons').select().eq('is_active', true).single();
+    final seasonId = season['id'] as String;
+
+    final teamsData = await client.from('teams').select('id, name');
+    final teamNames = {for (final t in teamsData) t['id'] as String: t['name'] as String};
+
+    final matches = await client
+        .from('matches')
+        .select('id, home_team_id, away_team_id, home_score, away_score, match_date, round, status')
+        .eq('season_id', seasonId)
+        .order('round')
+        .order('match_date');
+
+    final rounds = (matches.map((m) => m['round'] as int).toSet().toList()..sort());
+
+    setState(() {
+      _matches = List<Map<String, dynamic>>.from(matches);
+      _teamNames = teamNames;
+      _rounds = rounds;
+      _selectedRound = rounds.isNotEmpty ? rounds.first : 1;
+      _loading = false;
+    });
+  }
+
+  List<Map<String, dynamic>> get _filtered =>
+      _matches.where((m) => m['round'] == _selectedRound).toList();
 
   @override
   Widget build(BuildContext context) {
@@ -33,23 +61,30 @@ class _FixtureScreenState extends State<FixtureScreen> {
           IconButton(icon: const Icon(Icons.filter_list_rounded), onPressed: () {}),
         ],
       ),
-      body: Column(
-        children: [
-          _RoundSelector(
-            rounds: _rounds,
-            selected: _selectedRound,
-            onSelect: (r) => setState(() => _selectedRound = r),
-          ),
-          Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: _filtered.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemBuilder: (_, i) => _MatchCard(match: _filtered[i]),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+          : Column(
+              children: [
+                _RoundSelector(
+                  rounds: _rounds,
+                  selected: _selectedRound,
+                  onSelect: (r) => setState(() => _selectedRound = r),
+                ),
+                Expanded(
+                  child: _filtered.isEmpty
+                      ? const Center(child: Text('Sin partidos en esta fecha', style: TextStyle(color: AppTheme.textSecondary)))
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _filtered.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          itemBuilder: (_, i) => _MatchCard(
+                            match: _filtered[i],
+                            teamNames: _teamNames,
+                          ),
+                        ),
+                ),
+              ],
             ),
-          ),
-        ],
-      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {},
         backgroundColor: AppTheme.primary,
@@ -109,12 +144,20 @@ class _RoundSelector extends StatelessWidget {
 }
 
 class _MatchCard extends StatelessWidget {
-  final _MockMatch match;
+  final Map<String, dynamic> match;
+  final Map<String, String> teamNames;
 
-  const _MatchCard({required this.match});
+  const _MatchCard({required this.match, required this.teamNames});
 
   @override
   Widget build(BuildContext context) {
+    final finished = match['status'] == 'finished';
+    final homeTeam = teamNames[match['home_team_id']] ?? '?';
+    final awayTeam = teamNames[match['away_team_id']] ?? '?';
+    final homeScore = match['home_score'] as int;
+    final awayScore = match['away_score'] as int;
+    final date = _formatDate(match['match_date'] as String);
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -126,17 +169,19 @@ class _MatchCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(match.date, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+              Text(date, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: match.finished ? AppTheme.success.withOpacity(0.15) : AppTheme.primary.withOpacity(0.15),
+                  color: finished
+                      ? AppTheme.success.withValues(alpha: 0.15)
+                      : AppTheme.primary.withValues(alpha: 0.15),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Text(
-                  match.finished ? 'FINALIZADO' : 'PRÓXIMO',
+                  finished ? 'FINALIZADO' : 'PRÓXIMO',
                   style: TextStyle(
-                    color: match.finished ? AppTheme.success : AppTheme.primary,
+                    color: finished ? AppTheme.success : AppTheme.primary,
                     fontSize: 10,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.5,
@@ -150,51 +195,37 @@ class _MatchCard extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  match.homeTeam,
+                  homeTeam,
                   style: TextStyle(
-                    color: match.finished && match.homeScore! > match.awayScore! ? AppTheme.textPrimary : AppTheme.textSecondary,
+                    color: finished && homeScore > awayScore ? AppTheme.textPrimary : AppTheme.textSecondary,
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
                 ),
               ),
-              if (match.finished)
+              if (finished)
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.background,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(10)),
                   child: Row(
                     children: [
-                      Text('${match.homeScore}',
-                          style: TextStyle(
-                              color: match.homeScore! > match.awayScore! ? AppTheme.primary : AppTheme.textSecondary,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 18)),
+                      Text('$homeScore', style: TextStyle(color: homeScore > awayScore ? AppTheme.primary : AppTheme.textSecondary, fontWeight: FontWeight.w800, fontSize: 18)),
                       const Text('  –  ', style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
-                      Text('${match.awayScore}',
-                          style: TextStyle(
-                              color: match.awayScore! > match.homeScore! ? AppTheme.primary : AppTheme.textSecondary,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 18)),
+                      Text('$awayScore', style: TextStyle(color: awayScore > homeScore ? AppTheme.primary : AppTheme.textSecondary, fontWeight: FontWeight.w800, fontSize: 18)),
                     ],
                   ),
                 )
               else
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: AppTheme.background,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(10)),
                   child: const Text('vs', style: TextStyle(color: AppTheme.textSecondary, fontWeight: FontWeight.w600)),
                 ),
               Expanded(
                 child: Text(
-                  match.awayTeam,
+                  awayTeam,
                   style: TextStyle(
-                    color: match.finished && match.awayScore! > match.homeScore! ? AppTheme.textPrimary : AppTheme.textSecondary,
+                    color: finished && awayScore > homeScore ? AppTheme.textPrimary : AppTheme.textSecondary,
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
                   ),
@@ -203,7 +234,7 @@ class _MatchCard extends StatelessWidget {
               ),
             ],
           ),
-          if (match.finished) ...[
+          if (finished) ...[
             const SizedBox(height: 12),
             Row(
               children: [
@@ -216,6 +247,11 @@ class _MatchCard extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  String _formatDate(String iso) {
+    final dt = DateTime.parse(iso);
+    return '${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')}/${dt.year}';
   }
 }
 
@@ -244,24 +280,4 @@ class _ActionChip extends StatelessWidget {
       ),
     );
   }
-}
-
-class _MockMatch {
-  final int round;
-  final String homeTeam;
-  final String awayTeam;
-  final int? homeScore;
-  final int? awayScore;
-  final String date;
-  final bool finished;
-
-  const _MockMatch({
-    required this.round,
-    required this.homeTeam,
-    required this.awayTeam,
-    this.homeScore,
-    this.awayScore,
-    required this.date,
-    required this.finished,
-  });
 }

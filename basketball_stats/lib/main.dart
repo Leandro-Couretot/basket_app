@@ -1,7 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'screens/shell_screen.dart';
 
-void main() {
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(
+    url: 'https://olwrradruwwgjpadizdz.supabase.co',
+    anonKey: 'sb_publishable_8PQR6W6WCDahtoauLsk22Q_RS3NtftN',
+  );
   runApp(const BEAStatsApp());
 }
 

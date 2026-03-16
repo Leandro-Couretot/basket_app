@@ -1,21 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
 
-class _MockTeam {
-  final String name;
-  final int players;
-  final int wins;
-  final int losses;
-  final Color color;
-
-  const _MockTeam({
-    required this.name,
-    required this.players,
-    required this.wins,
-    required this.losses,
-    required this.color,
-  });
-}
+const _teamColors = [
+  Color(0xFF3498DB),
+  Color(0xFF2ECC71),
+  Color(0xFF9B59B6),
+  Color(0xFFE74C3C),
+  Color(0xFFF39C12),
+  Color(0xFF1ABC9C),
+];
 
 class TeamsScreen extends StatefulWidget {
   const TeamsScreen({super.key});
@@ -27,19 +21,67 @@ class TeamsScreen extends StatefulWidget {
 class _TeamsScreenState extends State<TeamsScreen> {
   final TextEditingController _searchController = TextEditingController();
   String _query = '';
+  List<Map<String, dynamic>> _teams = [];
+  bool _loading = true;
 
-  final List<_MockTeam> _teams = const [
-    _MockTeam(name: 'Lugano 80', players: 10, wins: 4, losses: 1, color: Color(0xFF3498DB)),
-    _MockTeam(name: 'Achaval City Básquet', players: 12, wins: 3, losses: 2, color: Color(0xFF2ECC71)),
-    _MockTeam(name: 'Slow Motion', players: 9, wins: 2, losses: 2, color: Color(0xFF9B59B6)),
-    _MockTeam(name: 'Super Ácidos', players: 11, wins: 1, losses: 4, color: Color(0xFFE74C3C)),
-    _MockTeam(name: 'Los Pinos BC', players: 8, wins: 0, losses: 0, color: Color(0xFFF39C12)),
-    _MockTeam(name: 'Barracas Norte', players: 10, wins: 0, losses: 0, color: Color(0xFF1ABC9C)),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _loadTeams();
+  }
 
-  List<_MockTeam> get _filtered {
+  Future<void> _loadTeams() async {
+    final client = Supabase.instance.client;
+
+    final teams = await client.from('teams').select('id, name, city').order('name');
+
+    // Get player counts per team
+    final players = await client.from('players').select('team_id');
+    final playerCounts = <String, int>{};
+    for (final p in players) {
+      final id = p['team_id'] as String;
+      playerCounts[id] = (playerCounts[id] ?? 0) + 1;
+    }
+
+    // Get wins/losses from finished matches
+    final matches = await client
+        .from('matches')
+        .select('home_team_id, away_team_id, home_score, away_score')
+        .eq('status', 'finished');
+
+    final wl = <String, Map<String, int>>{};
+    for (final m in matches) {
+      final h = m['home_team_id'] as String;
+      final a = m['away_team_id'] as String;
+      wl.putIfAbsent(h, () => {'w': 0, 'l': 0});
+      wl.putIfAbsent(a, () => {'w': 0, 'l': 0});
+      if ((m['home_score'] as int) > (m['away_score'] as int)) {
+        wl[h]!['w'] = wl[h]!['w']! + 1;
+        wl[a]!['l'] = wl[a]!['l']! + 1;
+      } else {
+        wl[a]!['w'] = wl[a]!['w']! + 1;
+        wl[h]!['l'] = wl[h]!['l']! + 1;
+      }
+    }
+
+    final enriched = teams.asMap().entries.map((e) {
+      final t = Map<String, dynamic>.from(e.value);
+      t['players'] = playerCounts[t['id']] ?? 0;
+      t['wins'] = wl[t['id']]?['w'] ?? 0;
+      t['losses'] = wl[t['id']]?['l'] ?? 0;
+      t['color'] = _teamColors[e.key % _teamColors.length];
+      return t;
+    }).toList();
+
+    setState(() {
+      _teams = enriched;
+      _loading = false;
+    });
+  }
+
+  List<Map<String, dynamic>> get _filtered {
     if (_query.isEmpty) return _teams;
-    return _teams.where((t) => t.name.toLowerCase().contains(_query.toLowerCase())).toList();
+    return _teams.where((t) => (t['name'] as String).toLowerCase().contains(_query.toLowerCase())).toList();
   }
 
   @override
@@ -52,21 +94,26 @@ class _TeamsScreenState extends State<TeamsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Equipos')),
-      body: Column(
-        children: [
-          _SearchBar(controller: _searchController, onChanged: (q) => setState(() => _query = q)),
-          Expanded(
-            child: _filtered.isEmpty
-                ? const _EmptySearch()
-                : ListView.separated(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: _filtered.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 10),
-                    itemBuilder: (_, i) => _TeamCard(team: _filtered[i]),
-                  ),
-          ),
-        ],
-      ),
+      body: _loading
+          ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+          : Column(
+              children: [
+                _SearchBar(
+                  controller: _searchController,
+                  onChanged: (q) => setState(() => _query = q),
+                ),
+                Expanded(
+                  child: _filtered.isEmpty
+                      ? const _EmptySearch()
+                      : ListView.separated(
+                          padding: const EdgeInsets.all(16),
+                          itemCount: _filtered.length,
+                          separatorBuilder: (_, __) => const SizedBox(height: 10),
+                          itemBuilder: (_, i) => _TeamCard(team: _filtered[i]),
+                        ),
+                ),
+              ],
+            ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {},
         backgroundColor: AppTheme.primary,
@@ -119,18 +166,22 @@ class _SearchBar extends StatelessWidget {
 }
 
 class _TeamCard extends StatelessWidget {
-  final _MockTeam team;
+  final Map<String, dynamic> team;
 
   const _TeamCard({required this.team});
 
   @override
   Widget build(BuildContext context) {
+    final color = team['color'] as Color;
+    final wins = team['wins'] as int;
+    final losses = team['losses'] as int;
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppTheme.surfaceElevated,
         borderRadius: BorderRadius.circular(16),
-        border: Border(left: BorderSide(color: team.color, width: 3)),
+        border: Border(left: BorderSide(color: color, width: 3)),
       ),
       child: Row(
         children: [
@@ -138,13 +189,13 @@ class _TeamCard extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: team.color.withOpacity(0.15),
+              color: color.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Center(
               child: Text(
-                team.name.substring(0, 1).toUpperCase(),
-                style: TextStyle(color: team.color, fontSize: 18, fontWeight: FontWeight.w800),
+                (team['name'] as String).substring(0, 1).toUpperCase(),
+                style: TextStyle(color: color, fontSize: 18, fontWeight: FontWeight.w800),
               ),
             ),
           ),
@@ -153,21 +204,21 @@ class _TeamCard extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(team.name, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
+                Text(team['name'] as String, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
                 const SizedBox(height: 2),
-                Text('${team.players} jugadores', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                Text('${team['players']} jugadores', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
               ],
             ),
           ),
-          if (team.wins + team.losses > 0) ...[
+          if (wins + losses > 0) ...[
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Row(
                   children: [
-                    Text('${team.wins}', style: const TextStyle(color: AppTheme.success, fontWeight: FontWeight.w800, fontSize: 16)),
+                    Text('$wins', style: const TextStyle(color: AppTheme.success, fontWeight: FontWeight.w800, fontSize: 16)),
                     const Text(' – ', style: TextStyle(color: AppTheme.textSecondary)),
-                    Text('${team.losses}', style: const TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w800, fontSize: 16)),
+                    Text('$losses', style: const TextStyle(color: AppTheme.danger, fontWeight: FontWeight.w800, fontSize: 16)),
                   ],
                 ),
                 const Text('G – P', style: TextStyle(color: AppTheme.textSecondary, fontSize: 10)),

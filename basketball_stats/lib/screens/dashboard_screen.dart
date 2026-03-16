@@ -1,8 +1,123 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
 
-class DashboardScreen extends StatelessWidget {
+class DashboardScreen extends StatefulWidget {
   const DashboardScreen({super.key});
+
+  @override
+  State<DashboardScreen> createState() => _DashboardScreenState();
+}
+
+class _DashboardScreenState extends State<DashboardScreen> {
+  List<Map<String, dynamic>> _teams = [];
+  String? _selectedTeamId;
+  String _seasonId = '';
+
+  Map<String, dynamic>? _topScorer;
+  Map<String, dynamic>? _topAssists;
+  Map<String, dynamic>? _topRebounds;
+  int _wins = 0;
+  int _losses = 0;
+
+  bool _loadingTeams = true;
+  bool _loadingStats = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTeams();
+  }
+
+  Future<void> _loadTeams() async {
+    final client = Supabase.instance.client;
+    final season = await client.from('seasons').select().eq('is_active', true).single();
+    final teams = await client.from('teams').select('id, name').order('name');
+    setState(() {
+      _seasonId = season['id'] as String;
+      _teams = List<Map<String, dynamic>>.from(teams);
+      _loadingTeams = false;
+    });
+    if (_teams.isNotEmpty) {
+      _selectTeam(_teams.first['id'] as String, _teams.first['name'] as String);
+    }
+  }
+
+  Future<void> _selectTeam(String teamId, String teamName) async {
+    setState(() {
+      _selectedTeamId = teamId;
+      _loadingStats = true;
+    });
+
+    final client = Supabase.instance.client;
+
+    // Get player stats for this team
+    final statsRows = await client
+        .from('player_match_stats')
+        .select('player_id, points, assists, rebounds, players(first_name, last_name, number)')
+        .eq('team_id', teamId);
+
+    // Aggregate per player
+    final Map<String, Map<String, dynamic>> agg = {};
+    for (final row in statsRows) {
+      final pid = row['player_id'] as String;
+      final player = row['players'] as Map<String, dynamic>;
+      agg.putIfAbsent(pid, () => {
+        'name': '${player['first_name']} ${player['last_name']}',
+        'number': player['number'],
+        'games': 0, 'points': 0, 'assists': 0, 'rebounds': 0,
+      });
+      agg[pid]!['games'] += 1;
+      agg[pid]!['points'] += row['points'] as int;
+      agg[pid]!['assists'] += row['assists'] as int;
+      agg[pid]!['rebounds'] += row['rebounds'] as int;
+    }
+
+    if (agg.isEmpty) {
+      setState(() { _topScorer = null; _topAssists = null; _topRebounds = null; _loadingStats = false; });
+      return;
+    }
+
+    Map<String, dynamic> _best(String stat) {
+      return agg.values.reduce((a, b) {
+        final avgA = (a[stat] as int) / (a['games'] as int);
+        final avgB = (b[stat] as int) / (b['games'] as int);
+        return avgA >= avgB ? a : b;
+      });
+    }
+
+    final topScorer = _best('points');
+    final topAssists = _best('assists');
+    final topRebounds = _best('rebounds');
+
+    // W/L for this team
+    final matches = await client
+        .from('matches')
+        .select('home_team_id, away_team_id, home_score, away_score')
+        .eq('season_id', _seasonId)
+        .eq('status', 'finished')
+        .or('home_team_id.eq.$teamId,away_team_id.eq.$teamId');
+
+    int wins = 0, losses = 0;
+    for (final m in matches) {
+      final isHome = m['home_team_id'] == teamId;
+      final teamScore = isHome ? m['home_score'] as int : m['away_score'] as int;
+      final oppScore = isHome ? m['away_score'] as int : m['home_score'] as int;
+      if (teamScore > oppScore) wins++; else losses++;
+    }
+
+    setState(() {
+      _topScorer = topScorer;
+      _topAssists = topAssists;
+      _topRebounds = topRebounds;
+      _wins = wins;
+      _losses = losses;
+      _loadingStats = false;
+    });
+  }
+
+  double _avg(Map<String, dynamic> p, String stat) =>
+      (p[stat] as int) / (p['games'] as int);
 
   @override
   Widget build(BuildContext context) {
@@ -12,10 +127,7 @@ class DashboardScreen extends StatelessWidget {
           children: [
             Container(
               padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: AppTheme.primaryDim,
-                borderRadius: BorderRadius.circular(8),
-              ),
+              decoration: BoxDecoration(color: AppTheme.primaryDim, borderRadius: BorderRadius.circular(8)),
               child: const Icon(Icons.sports_basketball, color: AppTheme.primary, size: 20),
             ),
             const SizedBox(width: 10),
@@ -23,10 +135,6 @@ class DashboardScreen extends StatelessWidget {
           ],
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.emoji_events_rounded, color: AppTheme.primary),
-            onPressed: () {},
-          ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: CircleAvatar(
@@ -37,63 +145,111 @@ class DashboardScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _SeasonSelector(),
-            const SizedBox(height: 20),
-            _SectionTitle('Líderes del equipo'),
-            const SizedBox(height: 12),
-            _LeadersGrid(),
-            const SizedBox(height: 24),
-            _SectionTitle('Últimos resultados'),
-            const SizedBox(height: 12),
-            _RecentMatchCard(
-              homeTeam: 'Lugano 80',
-              awayTeam: 'Super Ácidos',
-              homeScore: 84,
-              awayScore: 37,
-              date: '21/09/2025',
+      body: _loadingTeams
+          ? const Center(child: CircularProgressIndicator(color: AppTheme.primary))
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _TeamSelector(
+                    teams: _teams,
+                    selectedId: _selectedTeamId,
+                    onChanged: (id, name) => _selectTeam(id, name),
+                  ),
+                  const SizedBox(height: 20),
+                  _SectionTitle('Líderes del equipo'),
+                  const SizedBox(height: 12),
+                  if (_loadingStats)
+                    const Center(child: Padding(
+                      padding: EdgeInsets.all(32),
+                      child: CircularProgressIndicator(color: AppTheme.primary),
+                    ))
+                  else
+                    GridView.count(
+                      crossAxisCount: 2,
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      crossAxisSpacing: 10,
+                      mainAxisSpacing: 10,
+                      childAspectRatio: 1.4,
+                      children: [
+                        _LeaderCard(
+                          icon: Icons.sports_basketball,
+                          color: const Color(0xFF2ECC71),
+                          statLabel: 'Puntos',
+                          playerNumber: '#${_topScorer?['number'] ?? '-'}',
+                          playerName: _topScorer?['name'] ?? '-',
+                          value: _topScorer != null ? _avg(_topScorer!, 'points').toStringAsFixed(1) : '-',
+                          games: '${_topScorer?['games'] ?? 0} partidos',
+                        ),
+                        _LeaderCard(
+                          icon: Icons.swap_horiz_rounded,
+                          color: const Color(0xFFE74C3C),
+                          statLabel: 'Asistencias',
+                          playerNumber: '#${_topAssists?['number'] ?? '-'}',
+                          playerName: _topAssists?['name'] ?? '-',
+                          value: _topAssists != null ? _avg(_topAssists!, 'assists').toStringAsFixed(1) : '-',
+                          games: '${_topAssists?['games'] ?? 0} partidos',
+                        ),
+                        _LeaderCard(
+                          icon: Icons.fitness_center_rounded,
+                          color: const Color(0xFF3498DB),
+                          statLabel: 'Rebotes',
+                          playerNumber: '#${_topRebounds?['number'] ?? '-'}',
+                          playerName: _topRebounds?['name'] ?? '-',
+                          value: _topRebounds != null ? _avg(_topRebounds!, 'rebounds').toStringAsFixed(1) : '-',
+                          games: '${_topRebounds?['games'] ?? 0} partidos',
+                        ),
+                        _RecordCard(wins: _wins, losses: _losses),
+                      ],
+                    ),
+                ],
+              ),
             ),
-            const SizedBox(height: 10),
-            _RecentMatchCard(
-              homeTeam: 'Achaval City',
-              awayTeam: 'Slow Motion',
-              homeScore: 71,
-              awayScore: 65,
-              date: '14/09/2025',
-            ),
-            const SizedBox(height: 24),
-            _SectionTitle('MVPs de la fecha'),
-            const SizedBox(height: 12),
-            _MVPCard(),
-          ],
-        ),
-      ),
     );
   }
 }
 
-class _SeasonSelector extends StatelessWidget {
+class _TeamSelector extends StatelessWidget {
+  final List<Map<String, dynamic>> teams;
+  final String? selectedId;
+  final void Function(String id, String name) onChanged;
+
+  const _TeamSelector({required this.teams, required this.selectedId, required this.onChanged});
+
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
       decoration: BoxDecoration(
         color: AppTheme.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: AppTheme.divider),
       ),
-      child: Row(
-        children: [
-          const Icon(Icons.sports_basketball, color: AppTheme.primary, size: 16),
-          const SizedBox(width: 8),
-          const Text('Achaval City Básquet', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600)),
-          const Spacer(),
-          const Icon(Icons.expand_more, color: AppTheme.textSecondary, size: 20),
-        ],
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: selectedId,
+          isExpanded: true,
+          dropdownColor: AppTheme.surfaceElevated,
+          icon: const Icon(Icons.expand_more, color: AppTheme.textSecondary),
+          style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 14),
+          items: teams.map((t) => DropdownMenuItem<String>(
+            value: t['id'] as String,
+            child: Row(
+              children: [
+                const Icon(Icons.sports_basketball, color: AppTheme.primary, size: 16),
+                const SizedBox(width: 8),
+                Text(t['name'] as String),
+              ],
+            ),
+          )).toList(),
+          onChanged: (id) {
+            if (id == null) return;
+            final team = teams.firstWhere((t) => t['id'] == id);
+            onChanged(id, team['name'] as String);
+          },
+        ),
       ),
     );
   }
@@ -107,56 +263,7 @@ class _SectionTitle extends StatelessWidget {
   Widget build(BuildContext context) {
     return Text(
       title.toUpperCase(),
-      style: const TextStyle(
-        color: AppTheme.textSecondary,
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-        letterSpacing: 1.2,
-      ),
-    );
-  }
-}
-
-class _LeadersGrid extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    return GridView.count(
-      crossAxisCount: 2,
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      crossAxisSpacing: 10,
-      mainAxisSpacing: 10,
-      childAspectRatio: 1.4,
-      children: const [
-        _LeaderCard(
-          icon: Icons.sports_basketball,
-          color: Color(0xFF2ECC71),
-          statLabel: 'Puntos',
-          playerNumber: '#11',
-          playerName: 'player11',
-          value: '9.0',
-          games: '5 partidos',
-        ),
-        _LeaderCard(
-          icon: Icons.swap_horiz_rounded,
-          color: Color(0xFFE74C3C),
-          statLabel: 'Asistencias',
-          playerNumber: '#8',
-          playerName: 'player8',
-          value: '1.3',
-          games: '3 partidos',
-        ),
-        _LeaderCard(
-          icon: Icons.fitbit,
-          color: Color(0xFF3498DB),
-          statLabel: 'Rebotes',
-          playerNumber: '#10',
-          playerName: 'player10',
-          value: '3.4',
-          games: '5 partidos',
-        ),
-        _ResultsCard(wins: 3, losses: 2),
-      ],
+      style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w700, letterSpacing: 1.2),
     );
   }
 }
@@ -171,13 +278,9 @@ class _LeaderCard extends StatelessWidget {
   final String games;
 
   const _LeaderCard({
-    required this.icon,
-    required this.color,
-    required this.statLabel,
-    required this.playerNumber,
-    required this.playerName,
-    required this.value,
-    required this.games,
+    required this.icon, required this.color, required this.statLabel,
+    required this.playerNumber, required this.playerName,
+    required this.value, required this.games,
   });
 
   @override
@@ -193,39 +296,30 @@ class _LeaderCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Icon(icon, color: color, size: 14),
-              const SizedBox(width: 4),
-              Text(statLabel, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
-            ],
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(text: value, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 22, fontWeight: FontWeight.w800)),
-                    const TextSpan(text: ' avg', style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
-                  ],
-                ),
-              ),
-              Text('$playerNumber $playerName', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12, fontWeight: FontWeight.w600)),
-              Text(games, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10)),
-            ],
-          ),
+          Row(children: [
+            Icon(icon, color: color, size: 14),
+            const SizedBox(width: 4),
+            Text(statLabel, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
+          ]),
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            RichText(text: TextSpan(children: [
+              TextSpan(text: value, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 22, fontWeight: FontWeight.w800)),
+              const TextSpan(text: ' avg', style: TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+            ])),
+            Text('$playerNumber $playerName', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12, fontWeight: FontWeight.w600)),
+            Text(games, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10)),
+          ]),
         ],
       ),
     );
   }
 }
 
-class _ResultsCard extends StatelessWidget {
+class _RecordCard extends StatelessWidget {
   final int wins;
   final int losses;
 
-  const _ResultsCard({required this.wins, required this.losses});
+  const _RecordCard({required this.wins, required this.losses});
 
   @override
   Widget build(BuildContext context) {
@@ -243,153 +337,25 @@ class _ResultsCard extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           const Text('RESULTADOS', style: TextStyle(color: AppTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.w600)),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Text('$wins', style: const TextStyle(color: AppTheme.success, fontSize: 22, fontWeight: FontWeight.w800)),
-                  const Text(' - ', style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
-                  Text('$losses', style: const TextStyle(color: AppTheme.danger, fontSize: 22, fontWeight: FontWeight.w800)),
-                ],
-              ),
-              const SizedBox(height: 4),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: winPct,
-                  backgroundColor: AppTheme.danger.withOpacity(0.3),
-                  valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.success),
-                  minHeight: 6,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text('${(winPct * 100).toStringAsFixed(0)}% victorias', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10)),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _RecentMatchCard extends StatelessWidget {
-  final String homeTeam;
-  final String awayTeam;
-  final int homeScore;
-  final int awayScore;
-  final String date;
-
-  const _RecentMatchCard({
-    required this.homeTeam,
-    required this.awayTeam,
-    required this.homeScore,
-    required this.awayScore,
-    required this.date,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final homeWon = homeScore > awayScore;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceElevated,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: Text(
-              homeTeam,
-              style: TextStyle(
-                color: homeWon ? AppTheme.textPrimary : AppTheme.textSecondary,
-                fontWeight: homeWon ? FontWeight.w700 : FontWeight.w400,
-                fontSize: 13,
+          Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Row(children: [
+              Text('$wins', style: const TextStyle(color: AppTheme.success, fontSize: 22, fontWeight: FontWeight.w800)),
+              const Text(' - ', style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
+              Text('$losses', style: const TextStyle(color: AppTheme.danger, fontSize: 22, fontWeight: FontWeight.w800)),
+            ]),
+            const SizedBox(height: 4),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: winPct,
+                backgroundColor: AppTheme.danger.withValues(alpha: 0.3),
+                valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.success),
+                minHeight: 6,
               ),
             ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppTheme.background,
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Row(
-              children: [
-                Text('$homeScore', style: TextStyle(color: homeWon ? AppTheme.primary : AppTheme.textSecondary, fontWeight: FontWeight.w800, fontSize: 16)),
-                const Text('  –  ', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-                Text('$awayScore', style: TextStyle(color: !homeWon ? AppTheme.primary : AppTheme.textSecondary, fontWeight: FontWeight.w800, fontSize: 16)),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Text(
-              awayTeam,
-              style: TextStyle(
-                color: !homeWon ? AppTheme.textPrimary : AppTheme.textSecondary,
-                fontWeight: !homeWon ? FontWeight.w700 : FontWeight.w400,
-                fontSize: 13,
-              ),
-              textAlign: TextAlign.right,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MVPCard extends StatelessWidget {
-  const _MVPCard();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceElevated,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppTheme.primary.withOpacity(0.3)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.star_rounded, color: AppTheme.primary, size: 16),
-              const SizedBox(width: 6),
-              const Text('Lugano 80  84 – 37  Super Ácidos', style: TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 13)),
-              const Spacer(),
-              Text('21/09', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
-            ],
-          ),
-          const Divider(height: 16),
-          _mvpRow('19 Puntos', 'martin di placido'),
-          _mvpRow('6 Rebotes', 'Krukovsky / lucas di placio'),
-          _mvpRow('6 Asistencias', 'martin di placido'),
-          _mvpRow('29 Valoración', 'martin di placido'),
-        ],
-      ),
-    );
-  }
-
-  Widget _mvpRow(String stat, String player) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-            decoration: BoxDecoration(
-              color: AppTheme.primary,
-              borderRadius: BorderRadius.circular(6),
-            ),
-            child: Text(stat, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w700)),
-          ),
-          const SizedBox(width: 10),
-          Expanded(child: Text(player, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12))),
+            const SizedBox(height: 2),
+            Text('${(winPct * 100).toStringAsFixed(0)}% victorias', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 10)),
+          ]),
         ],
       ),
     );
