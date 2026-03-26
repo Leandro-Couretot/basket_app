@@ -32,7 +32,7 @@ class RoleSelectionScreen extends StatelessWidget {
               ),
               const SizedBox(height: 24),
               const Text(
-                'BEA Stats',
+                'BEA Stats modificado',
                 style: TextStyle(color: AppTheme.textPrimary, fontSize: 32, fontWeight: FontWeight.w800, letterSpacing: -0.5),
               ),
               const SizedBox(height: 8),
