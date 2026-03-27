@@ -23,6 +23,9 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
   bool _loadingMatches = true;
   bool _loadingPlayers = false;
 
+  int get _homeScore => _playersHome.fold(0, (s, p) => s + (_stats[p['id'] as String]?['pts'] ?? 0));
+  int get _awayScore  => _playersAway.fold(0, (s, p) => s + (_stats[p['id'] as String]?['pts'] ?? 0));
+
   @override
   void initState() {
     super.initState();
@@ -98,7 +101,8 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
     final matchId = _selectedMatch!['id'] as String;
     setState(() => _saving.add(playerId));
     try {
-      await Supabase.instance.client.from('player_match_stats').upsert({
+      final client = Supabase.instance.client;
+      await client.from('player_match_stats').upsert({
         'match_id': matchId,
         'player_id': playerId,
         'team_id': teamId,
@@ -107,6 +111,13 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
         'rebounds': _stats[playerId]!['reb'],
         'fouls':    _stats[playerId]!['fal'],
       }, onConflict: 'match_id,player_id');
+      if (stat == 'pts') {
+        await client.from('matches').update({
+          'home_score': _homeScore,
+          'away_score': _awayScore,
+          'status': 'in_progress',
+        }).eq('id', matchId);
+      }
     } finally {
       if (mounted) setState(() => _saving.remove(playerId));
     }
@@ -130,19 +141,7 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
                 }),
               )
             : null,
-        bottom: _selectedMatch != null && !_loadingPlayers
-            ? TabBar(
-                controller: _tabController,
-                labelColor: AppTheme.primary,
-                unselectedLabelColor: AppTheme.textSecondary,
-                indicatorColor: AppTheme.primary,
-                dividerColor: AppTheme.divider,
-                tabs: [
-                  Tab(text: (_selectedMatch!['home_team'] as Map)['name'] as String),
-                  Tab(text: (_selectedMatch!['away_team'] as Map)['name'] as String),
-                ],
-              )
-            : null,
+        bottom: null,
       ),
       body: _buildBody(),
     );
@@ -155,24 +154,136 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
 
     if (_loadingPlayers) return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
 
-    return TabBarView(
-      controller: _tabController,
+    final homeName = (_selectedMatch!['home_team'] as Map)['name'] as String;
+    final awayName = (_selectedMatch!['away_team'] as Map)['name'] as String;
+
+    return Column(
       children: [
-        _PlayerList(
-          players: _playersHome,
-          teamId: _selectedMatch!['home_team_id'] as String,
-          stats: _stats,
-          saving: _saving,
-          onUpdate: _updateStat,
+        _Scoreboard(
+          homeName: homeName,
+          awayName: awayName,
+          homeScore: _homeScore,
+          awayScore: _awayScore,
         ),
-        _PlayerList(
-          players: _playersAway,
-          teamId: _selectedMatch!['away_team_id'] as String,
-          stats: _stats,
-          saving: _saving,
-          onUpdate: _updateStat,
+        TabBar(
+          controller: _tabController,
+          labelColor: AppTheme.primary,
+          unselectedLabelColor: AppTheme.textSecondary,
+          indicatorColor: AppTheme.primary,
+          dividerColor: AppTheme.divider,
+          tabs: [Tab(text: homeName), Tab(text: awayName)],
+        ),
+        Expanded(
+          child: TabBarView(
+            controller: _tabController,
+            children: [
+              _PlayerList(
+                players: _playersHome,
+                teamId: _selectedMatch!['home_team_id'] as String,
+                stats: _stats,
+                saving: _saving,
+                onUpdate: _updateStat,
+              ),
+              _PlayerList(
+                players: _playersAway,
+                teamId: _selectedMatch!['away_team_id'] as String,
+                stats: _stats,
+                saving: _saving,
+                onUpdate: _updateStat,
+              ),
+            ],
+          ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Scoreboard ───────────────────────────────────────────────────────────────
+
+class _Scoreboard extends StatelessWidget {
+  final String homeName;
+  final String awayName;
+  final int homeScore;
+  final int awayScore;
+
+  const _Scoreboard({
+    required this.homeName,
+    required this.awayName,
+    required this.homeScore,
+    required this.awayScore,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final homeWin = homeScore > awayScore;
+    final awayWin = awayScore > homeScore;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceElevated,
+        border: Border(bottom: BorderSide(color: AppTheme.divider)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              homeName,
+              style: TextStyle(
+                color: homeWin ? AppTheme.textPrimary : AppTheme.textSecondary,
+                fontSize: 14,
+                fontWeight: homeWin ? FontWeight.w700 : FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppTheme.background,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '$homeScore',
+                  style: TextStyle(
+                    color: homeWin ? AppTheme.primary : AppTheme.textPrimary,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 10),
+                  child: Text('—', style: TextStyle(color: AppTheme.textSecondary, fontSize: 20)),
+                ),
+                Text(
+                  '$awayScore',
+                  style: TextStyle(
+                    color: awayWin ? AppTheme.primary : AppTheme.textPrimary,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: Text(
+              awayName,
+              style: TextStyle(
+                color: awayWin ? AppTheme.textPrimary : AppTheme.textSecondary,
+                fontSize: 14,
+                fontWeight: awayWin ? FontWeight.w700 : FontWeight.w500,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
