@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
+import 'live_stats_screen.dart';
 
 class AdminScreen extends StatelessWidget {
   const AdminScreen({super.key});
@@ -37,12 +38,20 @@ class AdminScreen extends StatelessWidget {
             const SizedBox(height: 24),
             _SectionLabel('Partido'),
             const SizedBox(height: 10),
+            _ActionCard(
+              icon: Icons.sports_score_rounded,
+              color: AppTheme.primary,
+              title: 'Acta en Vivo',
+              description: 'Cargá stats en tiempo real con +/-',
+              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LiveStatsScreen())),
+            ),
+            const SizedBox(height: 10),
             Row(children: [
               Expanded(child: _ActionCard(
                 icon: Icons.assignment_rounded,
-                color: AppTheme.primary,
+                color: const Color(0xFF7F8C8D),
                 title: 'Acta Digital',
-                description: 'Cargar stats del partido',
+                description: 'Cargar stats después del partido',
                 onTap: () => _showActaDigital(context),
               )),
               const SizedBox(width: 10),
