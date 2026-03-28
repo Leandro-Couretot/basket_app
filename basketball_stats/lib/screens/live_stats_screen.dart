@@ -400,31 +400,27 @@ class _PlayerRow extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => onTapShots(player, teamId),
-              child: Row(children: [
-                Text('${player['first_name']} ${player['last_name']}', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
-                const SizedBox(width: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: hasShotData ? AppTheme.primaryDim : AppTheme.surfaceElevated,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: hasShotData ? AppTheme.primary.withValues(alpha: 0.4) : AppTheme.divider),
-                  ),
-                  child: Text(
-                    hasShotData
-                        ? '${stats['d2c']}/${stats['d2i']} · ${stats['d3c']}/${stats['d3i']} · ${stats['tlc']}/${stats['tli']}'
-                        : '+ tiros',
-                    style: TextStyle(color: hasShotData ? AppTheme.primary : AppTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ]),
-            ),
+            child: Text('${player['first_name']} ${player['last_name']}', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
           ),
+          if (hasShotData)
+            Container(
+              margin: const EdgeInsets.only(right: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+              decoration: BoxDecoration(color: AppTheme.primaryDim, borderRadius: BorderRadius.circular(6), border: Border.all(color: AppTheme.primary.withValues(alpha: 0.4))),
+              child: Text('${stats['d2c']}/${stats['d2i']} · ${stats['d3c']}/${stats['d3i']} · ${stats['tlc']}/${stats['tli']}', style: const TextStyle(color: AppTheme.primary, fontSize: 10, fontWeight: FontWeight.w700)),
+            ),
           if (isSaving)
-            const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary)),
+            const Padding(
+              padding: EdgeInsets.only(right: 4),
+              child: SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary)),
+            ),
+          IconButton(
+            icon: Icon(Icons.sports_basketball, color: hasShotData ? AppTheme.primary : AppTheme.textSecondary, size: 20),
+            tooltip: 'Desglose de tiros',
+            onPressed: () => onTapShots(player, teamId),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+          ),
         ]),
         const SizedBox(height: 12),
         // Stat counters
