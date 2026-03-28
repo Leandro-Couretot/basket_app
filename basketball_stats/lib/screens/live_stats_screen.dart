@@ -658,9 +658,9 @@ class _ShotBreakdownSheetState extends State<_ShotBreakdownSheet> {
     setState(() {
       final int next = (_shots[key]! + delta).clamp(0, 99);
       _shots[key] = next;
-      if (key == 'd2c' && _shots['d2c']! > _shots['d2i']!) _shots['d2i'] = _shots['d2c'];
-      if (key == 'd3c' && _shots['d3c']! > _shots['d3i']!) _shots['d3i'] = _shots['d3c'];
-      if (key == 'tlc' && _shots['tlc']! > _shots['tli']!) _shots['tli'] = _shots['tlc'];
+      if (key == 'd2c' && next > (_shots['d2i'] ?? 0)) _shots['d2i'] = next;
+      if (key == 'd3c' && next > (_shots['d3i'] ?? 0)) _shots['d3i'] = next;
+      if (key == 'tlc' && next > (_shots['tli'] ?? 0)) _shots['tli'] = next;
     });
   }
 
