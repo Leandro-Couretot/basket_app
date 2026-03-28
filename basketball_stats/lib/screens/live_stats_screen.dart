@@ -401,6 +401,7 @@ class _PlayerRow extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
               onTap: () => onTapShots(player, teamId),
               child: Row(children: [
                 Text('${player['first_name']} ${player['last_name']}', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
