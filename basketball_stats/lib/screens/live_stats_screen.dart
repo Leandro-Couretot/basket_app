@@ -544,7 +544,7 @@ class _PlayerRow extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              _StatCounter(label: 'PTS', value: stats['pts']!, color: const Color(0xFF2ECC71), onTap: (int d) => onUpdate(pid, teamId, 'pts', d)),
+              _StatCounter(label: 'PTS', value: stats['pts']!, color: const Color(0xFF2ECC71), onTap: (int d) => onUpdate(pid, teamId, 'pts', d), readOnly: true),
               const SizedBox(width: 8),
               _StatCounter(label: 'AST', value: stats['ast']!, color: const Color(0xFF3498DB), onTap: (int d) => onUpdate(pid, teamId, 'ast', d)),
               const SizedBox(width: 8),
@@ -566,8 +566,9 @@ class _StatCounter extends StatelessWidget {
   final int value;
   final Color color;
   final void Function(int delta) onTap;
+  final bool readOnly;
 
-  const _StatCounter({required this.label, required this.value, required this.color, required this.onTap});
+  const _StatCounter({required this.label, required this.value, required this.color, required this.onTap, this.readOnly = false});
 
   @override
   Widget build(BuildContext context) {
@@ -577,22 +578,25 @@ class _StatCounter extends StatelessWidget {
         decoration: BoxDecoration(
           color: AppTheme.surfaceElevated,
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: color.withValues(alpha: 0.25)),
+          border: Border.all(color: color.withValues(alpha: readOnly ? 0.12 : 0.25)),
         ),
         child: Column(
           children: [
-            Text(label, style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
+            Text(label, style: TextStyle(color: readOnly ? color.withValues(alpha: 0.5) : color, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
             const SizedBox(height: 6),
-            Text('$value', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 26, fontWeight: FontWeight.w800, height: 1)),
+            Text('$value', style: TextStyle(color: readOnly ? AppTheme.textSecondary : AppTheme.textPrimary, fontSize: 26, fontWeight: FontWeight.w800, height: 1)),
             const SizedBox(height: 8),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                _Btn(icon: Icons.remove_rounded, color: color, onTap: () => onTap(-1)),
-                const SizedBox(width: 8),
-                _Btn(icon: Icons.add_rounded, color: color, onTap: () => onTap(1)),
-              ],
-            ),
+            if (readOnly)
+              const Icon(Icons.sports_basketball, size: 14, color: AppTheme.textSecondary)
+            else
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _Btn(icon: Icons.remove_rounded, color: color, onTap: () => onTap(-1)),
+                  const SizedBox(width: 8),
+                  _Btn(icon: Icons.add_rounded, color: color, onTap: () => onTap(1)),
+                ],
+              ),
           ],
         ),
       ),
@@ -658,9 +662,14 @@ class _ShotBreakdownSheetState extends State<_ShotBreakdownSheet> {
     setState(() {
       final int next = (_shots[key]! + delta).clamp(0, 99);
       _shots[key] = next;
-      if (key == 'd2c' && next > (_shots['d2i'] ?? 0)) _shots['d2i'] = next;
-      if (key == 'd3c' && next > (_shots['d3i'] ?? 0)) _shots['d3i'] = next;
-      if (key == 'tlc' && next > (_shots['tli'] ?? 0)) _shots['tli'] = next;
+      // CONV sube: INT sigue. CONV baja: INT baja también.
+      if (key == 'd2c') _shots['d2i'] = next;
+      if (key == 'd3c') _shots['d3i'] = next;
+      if (key == 'tlc') _shots['tli'] = next;
+      // INT baja por debajo de CONV: CONV baja también.
+      if (key == 'd2i' && next < (_shots['d2c'] ?? 0)) _shots['d2c'] = next;
+      if (key == 'd3i' && next < (_shots['d3c'] ?? 0)) _shots['d3c'] = next;
+      if (key == 'tli' && next < (_shots['tlc'] ?? 0)) _shots['tlc'] = next;
     });
   }
 
