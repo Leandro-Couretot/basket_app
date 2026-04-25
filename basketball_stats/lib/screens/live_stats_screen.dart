@@ -16,15 +16,35 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
   List<Map<String, dynamic>> _playersAway = [];
   late TabController _tabController;
 
-  // playerId -> { 'pts':0, 'ast':0, 'reb':0, 'fal':0, 'd2c':0,'d2i':0,'d3c':0,'d3i':0,'tlc':0,'tli':0 }
-  final Map<String, Map<String, int>> _stats = {};
-  final Set<String> _saving = {};
+  // quarter (1-4) → playerId → stat map
+  final Map<int, Map<String, Map<String, int>>> _quarterStats = {1: {}, 2: {}, 3: {}, 4: {}};
+  int _currentQuarter = 1;
 
   bool _loadingMatches = true;
   bool _loadingPlayers = false;
 
-  int get _homeScore => _playersHome.fold(0, (int s, Map<String, dynamic> p) => s + (_stats[p['id'] as String]?['pts'] ?? 0));
-  int get _awayScore  => _playersAway.fold(0, (int s, Map<String, dynamic> p) => s + (_stats[p['id'] as String]?['pts'] ?? 0));
+  Map<String, int> _emptyStats() => {
+    'pts': 0, 'ast': 0, 'reb': 0, 'fal': 0,
+    'd2c': 0, 'd2i': 0, 'd3c': 0, 'd3i': 0, 'tlc': 0, 'tli': 0,
+  };
+
+  Map<String, int> _statsFor(String playerId) =>
+      _quarterStats[_currentQuarter]![playerId] ?? _emptyStats();
+
+  // Cumulative score (sum of all quarters)
+  int _teamScore(List<Map<String, dynamic>> players) => players.fold(0, (s, p) {
+    final pid = p['id'] as String;
+    return s + _quarterStats.values.fold(0, (qs, q) => qs + (q[pid]?['pts'] ?? 0));
+  });
+
+  int get _homeScore => _teamScore(_playersHome);
+  int get _awayScore => _teamScore(_playersAway);
+
+  // Score for a specific quarter
+  int _qScore(int quarter, List<Map<String, dynamic>> players) => players.fold(0, (s, p) {
+    final pid = p['id'] as String;
+    return s + (_quarterStats[quarter]?[pid]?['pts'] ?? 0);
+  });
 
   @override
   void initState() {
@@ -52,40 +72,23 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
   }
 
   Future<void> _selectMatch(Map<String, dynamic> match) async {
-    setState(() { _selectedMatch = match; _loadingPlayers = true; });
+    setState(() {
+      _selectedMatch = match;
+      _loadingPlayers = true;
+      _currentQuarter = 1;
+      for (final q in _quarterStats.values) q.clear();
+    });
 
     final client = Supabase.instance.client;
     final homeId = match['home_team_id'] as String;
     final awayId = match['away_team_id'] as String;
-    final matchId = match['id'] as String;
 
     final homePlayers = await client.from('players').select('id, first_name, last_name, number').eq('team_id', homeId).order('number');
     final awayPlayers = await client.from('players').select('id, first_name, last_name, number').eq('team_id', awayId).order('number');
 
-    final existingStats = await client.from('player_match_stats')
-        .select('player_id, points, assists, rebounds, fouls, two_pt_made, two_pt_attempted, three_pt_made, three_pt_attempted, ft_made, ft_attempted')
-        .eq('match_id', matchId);
-
+    // Pre-populate empty stats for all players in Q1
     for (final p in [...homePlayers, ...awayPlayers]) {
-      final pid = p['id'] as String;
-      _stats[pid] = { 'pts': 0, 'ast': 0, 'reb': 0, 'fal': 0, 'd2c': 0, 'd2i': 0, 'd3c': 0, 'd3i': 0, 'tlc': 0, 'tli': 0 };
-    }
-    for (final row in existingStats) {
-      final pid = row['player_id'] as String;
-      if (_stats.containsKey(pid)) {
-        _stats[pid] = {
-          'pts': (row['points']   as int?) ?? 0,
-          'ast': (row['assists']  as int?) ?? 0,
-          'reb': (row['rebounds'] as int?) ?? 0,
-          'fal': (row['fouls']    as int?) ?? 0,
-          'd2c': (row['two_pt_made']        as int?) ?? 0,
-          'd2i': (row['two_pt_attempted']   as int?) ?? 0,
-          'd3c': (row['three_pt_made']      as int?) ?? 0,
-          'd3i': (row['three_pt_attempted'] as int?) ?? 0,
-          'tlc': (row['ft_made']            as int?) ?? 0,
-          'tli': (row['ft_attempted']       as int?) ?? 0,
-        };
-      }
+      _quarterStats[1]![p['id'] as String] = _emptyStats();
     }
 
     setState(() {
@@ -95,48 +98,21 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
     });
   }
 
-  Future<void> _updateStat(String playerId, String teamId, String stat, int delta) async {
-    final int current = _stats[playerId]![stat]!;
-    final int next = (current + delta).clamp(0, 99);
+  void _updateStat(String playerId, String stat, int delta) {
+    final q = _quarterStats[_currentQuarter]!;
+    q.putIfAbsent(playerId, _emptyStats);
+    final current = q[playerId]![stat]!;
+    final next = (current + delta).clamp(0, 99);
     if (next == current) return;
-
-    setState(() => _stats[playerId]![stat] = next);
-
-    final String matchId = _selectedMatch!['id'] as String;
-    setState(() => _saving.add(playerId));
-    try {
-      final client = Supabase.instance.client;
-      final Map<String, int> s = _stats[playerId]!;
-      await client.from('player_match_stats').upsert({
-        'match_id': matchId,
-        'player_id': playerId,
-        'team_id': teamId,
-        'points':   s['pts'],
-        'assists':  s['ast'],
-        'rebounds': s['reb'],
-        'fouls':    s['fal'],
-      }, onConflict: 'match_id,player_id');
-      if (stat == 'pts') {
-        await client.from('matches').update({
-          'home_score': _homeScore,
-          'away_score': _awayScore,
-          'status': 'in_progress',
-        }).eq('id', matchId);
-      }
-    } finally {
-      if (mounted) setState(() => _saving.remove(playerId));
-    }
+    setState(() => q[playerId]![stat] = next);
   }
 
-  Future<void> _applyShotStats(String playerId, String teamId, Map<String, int> shots) async {
-    final int d2c = shots['d2c']!;
-    final int d3c = shots['d3c']!;
-    final int tlc = shots['tlc']!;
-    final int pts = d2c * 2 + d3c * 3 + tlc;
-
+  void _applyShotStats(String playerId, Map<String, int> shots) {
+    final q = _quarterStats[_currentQuarter]!;
+    q.putIfAbsent(playerId, _emptyStats);
     setState(() {
-      final Map<String, int> s = _stats[playerId]!;
-      s['pts'] = pts;
+      final s = q[playerId]!;
+      s['pts'] = shots['d2c']! * 2 + shots['d3c']! * 3 + shots['tlc']!;
       s['d2c'] = shots['d2c']!;
       s['d2i'] = shots['d2i']!;
       s['d3c'] = shots['d3c']!;
@@ -144,57 +120,30 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
       s['tlc'] = shots['tlc']!;
       s['tli'] = shots['tli']!;
     });
-
-    final String matchId = _selectedMatch!['id'] as String;
-    setState(() => _saving.add(playerId));
-    try {
-      final client = Supabase.instance.client;
-      final Map<String, int> s = _stats[playerId]!;
-      await client.from('player_match_stats').upsert({
-        'match_id': matchId,
-        'player_id': playerId,
-        'team_id': teamId,
-        'points':   s['pts'],
-        'assists':  s['ast'],
-        'rebounds': s['reb'],
-        'fouls':    s['fal'],
-        'two_pt_made':        s['d2c'],
-        'two_pt_attempted':   s['d2i'],
-        'three_pt_made':      s['d3c'],
-        'three_pt_attempted': s['d3i'],
-        'ft_made':            s['tlc'],
-        'ft_attempted':       s['tli'],
-      }, onConflict: 'match_id,player_id');
-      await client.from('matches').update({
-        'home_score': _homeScore,
-        'away_score': _awayScore,
-        'status': 'in_progress',
-      }).eq('id', matchId);
-    } finally {
-      if (mounted) setState(() => _saving.remove(playerId));
-    }
   }
 
-  void _openShotBreakdown(String playerId, String teamId, String playerName, int playerNumber) {
-    final Map<String, int> currentShots = {
-      'd2c': _stats[playerId]!['d2c']!,
-      'd2i': _stats[playerId]!['d2i']!,
-      'd3c': _stats[playerId]!['d3c']!,
-      'd3i': _stats[playerId]!['d3i']!,
-      'tlc': _stats[playerId]!['tlc']!,
-      'tli': _stats[playerId]!['tli']!,
-    };
+  void _openShotBreakdown(String playerId, String playerName, int playerNumber) {
+    final current = Map<String, int>.from(_statsFor(playerId));
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.transparent,
       isScrollControlled: true,
-      builder: (BuildContext ctx) => _ShotBreakdownSheet(
+      builder: (ctx) => _ShotBreakdownSheet(
         playerName: playerName,
         playerNumber: playerNumber,
-        initialShots: currentShots,
-        onApply: (Map<String, int> shots) => _applyShotStats(playerId, teamId, shots),
+        quarter: _currentQuarter,
+        initialShots: current,
+        onApply: (shots) => _applyShotStats(playerId, shots),
       ),
     );
+  }
+
+  void _switchQuarter(int q) {
+    // Pre-populate new quarter with empty stats if needed
+    for (final p in [..._playersHome, ..._playersAway]) {
+      _quarterStats[q]!.putIfAbsent(p['id'] as String, _emptyStats);
+    }
+    setState(() => _currentQuarter = q);
   }
 
   @override
@@ -211,11 +160,10 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
                   _selectedMatch = null;
                   _playersHome = [];
                   _playersAway = [];
-                  _stats.clear();
+                  for (final q in _quarterStats.values) q.clear();
                 }),
               )
             : null,
-        bottom: null,
       ),
       body: _buildBody(),
     );
@@ -223,13 +171,11 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
 
   Widget _buildBody() {
     if (_loadingMatches) return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
-
     if (_selectedMatch == null) return _MatchList(matches: _matches, onSelect: _selectMatch);
-
     if (_loadingPlayers) return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
 
-    final String homeName = (_selectedMatch!['home_team'] as Map<String, dynamic>)['name'] as String;
-    final String awayName = (_selectedMatch!['away_team'] as Map<String, dynamic>)['name'] as String;
+    final homeName = (_selectedMatch!['home_team'] as Map<String, dynamic>)['name'] as String;
+    final awayName = (_selectedMatch!['away_team'] as Map<String, dynamic>)['name'] as String;
 
     return Column(
       children: [
@@ -238,6 +184,14 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
           awayName: awayName,
           homeScore: _homeScore,
           awayScore: _awayScore,
+          quarterScores: List.generate(4, (i) => (
+            home: _qScore(i + 1, _playersHome),
+            away: _qScore(i + 1, _playersAway),
+          )),
+        ),
+        _QuarterSelector(
+          current: _currentQuarter,
+          onSelect: _switchQuarter,
         ),
         TabBar(
           controller: _tabController,
@@ -253,24 +207,73 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
             children: [
               _PlayerList(
                 players: _playersHome,
-                teamId: _selectedMatch!['home_team_id'] as String,
-                stats: _stats,
-                saving: _saving,
-                onUpdate: _updateStat,
+                statsFor: _statsFor,
+                onUpdate: (pid, stat, d) => _updateStat(pid, stat, d),
                 onTapShots: _openShotBreakdown,
               ),
               _PlayerList(
                 players: _playersAway,
-                teamId: _selectedMatch!['away_team_id'] as String,
-                stats: _stats,
-                saving: _saving,
-                onUpdate: _updateStat,
+                statsFor: _statsFor,
+                onUpdate: (pid, stat, d) => _updateStat(pid, stat, d),
                 onTapShots: _openShotBreakdown,
               ),
             ],
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─── Quarter selector ─────────────────────────────────────────────────────────
+
+class _QuarterSelector extends StatelessWidget {
+  final int current;
+  final ValueChanged<int> onSelect;
+
+  const _QuarterSelector({required this.current, required this.onSelect});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      color: AppTheme.surface,
+      child: Row(
+        children: [
+          const Text('CUARTO',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 1)),
+          const SizedBox(width: 12),
+          ...List.generate(4, (i) {
+            final q = i + 1;
+            final isSelected = current == q;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: GestureDetector(
+                onTap: () => onSelect(q),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: isSelected ? AppTheme.primary : AppTheme.surfaceElevated,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isSelected ? AppTheme.primary : AppTheme.divider,
+                    ),
+                  ),
+                  child: Text(
+                    'Q$q',
+                    style: TextStyle(
+                      color: isSelected ? Colors.white : AppTheme.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+        ],
+      ),
     );
   }
 }
@@ -282,81 +285,100 @@ class _Scoreboard extends StatelessWidget {
   final String awayName;
   final int homeScore;
   final int awayScore;
+  final List<({int home, int away})> quarterScores;
 
   const _Scoreboard({
     required this.homeName,
     required this.awayName,
     required this.homeScore,
     required this.awayScore,
+    required this.quarterScores,
   });
 
   @override
   Widget build(BuildContext context) {
-    final bool homeWin = homeScore > awayScore;
-    final bool awayWin = awayScore > homeScore;
+    final homeWin = homeScore > awayScore;
+    final awayWin = awayScore > homeScore;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-      decoration: BoxDecoration(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 12),
+      decoration: const BoxDecoration(
         color: AppTheme.surfaceElevated,
         border: Border(bottom: BorderSide(color: AppTheme.divider)),
       ),
-      child: Row(
+      child: Column(
         children: [
-          Expanded(
-            child: Text(
-              homeName,
-              style: TextStyle(
-                color: homeWin ? AppTheme.textPrimary : AppTheme.textSecondary,
-                fontSize: 14,
-                fontWeight: homeWin ? FontWeight.w700 : FontWeight.w500,
+          // Main score
+          Row(
+            children: [
+              Expanded(
+                child: Text(homeName,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: homeWin ? AppTheme.textPrimary : AppTheme.textSecondary,
+                      fontSize: 14,
+                      fontWeight: homeWin ? FontWeight.w700 : FontWeight.w500,
+                    )),
               ),
-              textAlign: TextAlign.center,
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            decoration: BoxDecoration(
-              color: AppTheme.background,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '$homeScore',
-                  style: TextStyle(
-                    color: homeWin ? AppTheme.primary : AppTheme.textPrimary,
-                    fontSize: 32,
-                    fontWeight: FontWeight.w900,
-                  ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
+                decoration: BoxDecoration(color: AppTheme.background, borderRadius: BorderRadius.circular(12)),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('$homeScore',
+                        style: TextStyle(
+                            color: homeWin ? AppTheme.primary : AppTheme.textPrimary,
+                            fontSize: 30, fontWeight: FontWeight.w900)),
+                    const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 10),
+                      child: Text('—', style: TextStyle(color: AppTheme.textSecondary, fontSize: 18)),
+                    ),
+                    Text('$awayScore',
+                        style: TextStyle(
+                            color: awayWin ? AppTheme.primary : AppTheme.textPrimary,
+                            fontSize: 30, fontWeight: FontWeight.w900)),
+                  ],
                 ),
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 10),
-                  child: Text('—', style: TextStyle(color: AppTheme.textSecondary, fontSize: 20)),
-                ),
-                Text(
-                  '$awayScore',
-                  style: TextStyle(
-                    color: awayWin ? AppTheme.primary : AppTheme.textPrimary,
-                    fontSize: 32,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: Text(
-              awayName,
-              style: TextStyle(
-                color: awayWin ? AppTheme.textPrimary : AppTheme.textSecondary,
-                fontSize: 14,
-                fontWeight: awayWin ? FontWeight.w700 : FontWeight.w500,
               ),
-              textAlign: TextAlign.center,
-            ),
+              Expanded(
+                child: Text(awayName,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: awayWin ? AppTheme.textPrimary : AppTheme.textSecondary,
+                      fontSize: 14,
+                      fontWeight: awayWin ? FontWeight.w700 : FontWeight.w500,
+                    )),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Per-quarter breakdown
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List.generate(4, (i) {
+              final qs = quarterScores[i];
+              final hasData = qs.home > 0 || qs.away > 0;
+              return Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Column(
+                  children: [
+                    Text('Q${i + 1}',
+                        style: const TextStyle(
+                            color: AppTheme.textSecondary, fontSize: 9, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 3),
+                    Text(
+                      hasData ? '${qs.home}-${qs.away}' : '—',
+                      style: TextStyle(
+                          color: hasData ? AppTheme.textPrimary : AppTheme.textSecondary,
+                          fontSize: 12,
+                          fontWeight: hasData ? FontWeight.w700 : FontWeight.w400),
+                    ),
+                  ],
+                ),
+              );
+            }),
           ),
         ],
       ),
@@ -372,8 +394,8 @@ class _MatchTitle extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String home = (match['home_team'] as Map<String, dynamic>)['name'] as String;
-    final String away = (match['away_team'] as Map<String, dynamic>)['name'] as String;
+    final home = (match['home_team'] as Map<String, dynamic>)['name'] as String;
+    final away = (match['away_team'] as Map<String, dynamic>)['name'] as String;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -406,15 +428,14 @@ class _MatchList extends StatelessWidget {
         ),
       );
     }
-
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: matches.length,
-      separatorBuilder: (BuildContext _, int __) => const SizedBox(height: 10),
-      itemBuilder: (BuildContext _, int i) {
-        final Map<String, dynamic> m = matches[i];
-        final String home = (m['home_team'] as Map<String, dynamic>)['name'] as String;
-        final String away = (m['away_team'] as Map<String, dynamic>)['name'] as String;
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (_, i) {
+        final m = matches[i];
+        final home = (m['home_team'] as Map<String, dynamic>)['name'] as String;
+        final away = (m['away_team'] as Map<String, dynamic>)['name'] as String;
         return GestureDetector(
           onTap: () => onSelect(m),
           child: Container(
@@ -429,11 +450,13 @@ class _MatchList extends StatelessWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(color: AppTheme.primaryDim, borderRadius: BorderRadius.circular(8)),
-                  child: Text('F${m['round']}', style: const TextStyle(color: AppTheme.primary, fontSize: 12, fontWeight: FontWeight.w800)),
+                  child: Text('F${m['round']}',
+                      style: const TextStyle(color: AppTheme.primary, fontSize: 12, fontWeight: FontWeight.w800)),
                 ),
                 const SizedBox(width: 14),
                 Expanded(
-                  child: Text('$home  vs  $away', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
+                  child: Text('$home  vs  $away',
+                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 15, fontWeight: FontWeight.w600)),
                 ),
                 const Icon(Icons.sports_score_rounded, color: AppTheme.primary, size: 20),
               ],
@@ -445,21 +468,17 @@ class _MatchList extends StatelessWidget {
   }
 }
 
-// ─── Player list with stat counters ──────────────────────────────────────────
+// ─── Player list ──────────────────────────────────────────────────────────────
 
 class _PlayerList extends StatelessWidget {
   final List<Map<String, dynamic>> players;
-  final String teamId;
-  final Map<String, Map<String, int>> stats;
-  final Set<String> saving;
-  final Future<void> Function(String, String, String, int) onUpdate;
-  final void Function(String, String, String, int) onTapShots;
+  final Map<String, int> Function(String) statsFor;
+  final void Function(String, String, int) onUpdate;
+  final void Function(String, String, int) onTapShots;
 
   const _PlayerList({
     required this.players,
-    required this.teamId,
-    required this.stats,
-    required this.saving,
+    required this.statsFor,
     required this.onUpdate,
     required this.onTapShots,
   });
@@ -469,17 +488,19 @@ class _PlayerList extends StatelessWidget {
     return ListView.separated(
       padding: const EdgeInsets.all(16),
       itemCount: players.length,
-      separatorBuilder: (BuildContext _, int __) => const Divider(height: 1, color: AppTheme.divider),
-      itemBuilder: (BuildContext _, int i) {
-        final Map<String, dynamic> p = players[i];
-        final String pid = p['id'] as String;
+      separatorBuilder: (_, __) => const Divider(height: 1, color: AppTheme.divider),
+      itemBuilder: (_, i) {
+        final p = players[i];
+        final pid = p['id'] as String;
         return _PlayerRow(
           player: p,
-          teamId: teamId,
-          stats: stats[pid] ?? {'pts': 0, 'ast': 0, 'reb': 0, 'fal': 0, 'd2c': 0, 'd2i': 0, 'd3c': 0, 'd3i': 0, 'tlc': 0, 'tli': 0},
-          isSaving: saving.contains(pid),
-          onUpdate: onUpdate,
-          onTapShots: onTapShots,
+          stats: statsFor(pid),
+          onUpdate: (stat, d) => onUpdate(pid, stat, d),
+          onTapShots: () => onTapShots(
+            pid,
+            '${p['first_name']} ${p['last_name']}',
+            (p['number'] as int?) ?? 0,
+          ),
         );
       },
     );
@@ -490,27 +511,22 @@ class _PlayerList extends StatelessWidget {
 
 class _PlayerRow extends StatelessWidget {
   final Map<String, dynamic> player;
-  final String teamId;
   final Map<String, int> stats;
-  final bool isSaving;
-  final Future<void> Function(String, String, String, int) onUpdate;
-  final void Function(String, String, String, int) onTapShots;
+  final void Function(String stat, int delta) onUpdate;
+  final VoidCallback onTapShots;
 
   const _PlayerRow({
     required this.player,
-    required this.teamId,
     required this.stats,
-    required this.isSaving,
     required this.onUpdate,
     required this.onTapShots,
   });
 
   @override
   Widget build(BuildContext context) {
-    final String pid = player['id'] as String;
-    final String firstName = player['first_name'] as String;
-    final String lastName = player['last_name'] as String;
-    final int number = (player['number'] as int?) ?? 0;
+    final firstName = player['first_name'] as String;
+    final lastName = player['last_name'] as String;
+    final number = (player['number'] as int?) ?? 0;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 14),
@@ -522,35 +538,36 @@ class _PlayerRow extends StatelessWidget {
               Container(
                 width: 36, height: 36,
                 decoration: BoxDecoration(color: AppTheme.primaryDim, borderRadius: BorderRadius.circular(10)),
-                child: Center(child: Text('#$number', style: const TextStyle(color: AppTheme.primary, fontSize: 12, fontWeight: FontWeight.w800))),
+                child: Center(child: Text('#$number',
+                    style: const TextStyle(color: AppTheme.primary, fontSize: 12, fontWeight: FontWeight.w800))),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                  '$firstName $lastName',
-                  style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600),
-                ),
+                child: Text('$firstName $lastName',
+                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14, fontWeight: FontWeight.w600)),
               ),
               IconButton(
                 icon: const Icon(Icons.sports_basketball, size: 18),
                 color: AppTheme.primary,
                 tooltip: 'Desglose de tiros',
-                onPressed: () => onTapShots(pid, teamId, '$firstName $lastName', number),
+                onPressed: onTapShots,
               ),
-              if (isSaving)
-                const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary)),
             ],
           ),
           const SizedBox(height: 12),
           Row(
             children: [
-              _StatCounter(label: 'PTS', value: stats['pts']!, color: const Color(0xFF2ECC71), onTap: (int d) => onUpdate(pid, teamId, 'pts', d), readOnly: true),
+              _StatCounter(label: 'PTS', value: stats['pts']!, color: const Color(0xFF2ECC71),
+                  onTap: (d) => onUpdate('pts', d), readOnly: true),
               const SizedBox(width: 8),
-              _StatCounter(label: 'AST', value: stats['ast']!, color: const Color(0xFF3498DB), onTap: (int d) => onUpdate(pid, teamId, 'ast', d)),
+              _StatCounter(label: 'AST', value: stats['ast']!, color: const Color(0xFF3498DB),
+                  onTap: (d) => onUpdate('ast', d)),
               const SizedBox(width: 8),
-              _StatCounter(label: 'REB', value: stats['reb']!, color: const Color(0xFFF39C12), onTap: (int d) => onUpdate(pid, teamId, 'reb', d)),
+              _StatCounter(label: 'REB', value: stats['reb']!, color: const Color(0xFFF39C12),
+                  onTap: (d) => onUpdate('reb', d)),
               const SizedBox(width: 8),
-              _StatCounter(label: 'FAL', value: stats['fal']!, color: const Color(0xFFE74C3C), onTap: (int d) => onUpdate(pid, teamId, 'fal', d)),
+              _StatCounter(label: 'FAL', value: stats['fal']!, color: const Color(0xFFE74C3C),
+                  onTap: (d) => onUpdate('fal', d)),
             ],
           ),
         ],
@@ -616,12 +633,8 @@ class _Btn extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 36,
-        height: 36,
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(10),
-        ),
+        width: 36, height: 36,
+        decoration: BoxDecoration(color: color.withValues(alpha: 0.15), borderRadius: BorderRadius.circular(10)),
         child: Icon(icon, color: color, size: 20),
       ),
     );
@@ -633,12 +646,14 @@ class _Btn extends StatelessWidget {
 class _ShotBreakdownSheet extends StatefulWidget {
   final String playerName;
   final int playerNumber;
+  final int quarter;
   final Map<String, int> initialShots;
   final void Function(Map<String, int>) onApply;
 
   const _ShotBreakdownSheet({
     required this.playerName,
     required this.playerNumber,
+    required this.quarter,
     required this.initialShots,
     required this.onApply,
   });
@@ -660,13 +675,11 @@ class _ShotBreakdownSheetState extends State<_ShotBreakdownSheet> {
 
   void _change(String key, int delta) {
     setState(() {
-      final int next = (_shots[key]! + delta).clamp(0, 99);
+      final next = (_shots[key]! + delta).clamp(0, 99);
       _shots[key] = next;
-      // CONV sube: INT sigue. CONV baja: INT baja también.
       if (key == 'd2c') _shots['d2i'] = next;
       if (key == 'd3c') _shots['d3i'] = next;
       if (key == 'tlc') _shots['tli'] = next;
-      // INT baja por debajo de CONV: CONV baja también.
       if (key == 'd2i' && next < (_shots['d2c'] ?? 0)) _shots['d2c'] = next;
       if (key == 'd3i' && next < (_shots['d3c'] ?? 0)) _shots['d3c'] = next;
       if (key == 'tli' && next < (_shots['tlc'] ?? 0)) _shots['tlc'] = next;
@@ -675,14 +688,6 @@ class _ShotBreakdownSheetState extends State<_ShotBreakdownSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final int d2c = _shots['d2c']!;
-    final int d2i = _shots['d2i']!;
-    final int d3c = _shots['d3c']!;
-    final int d3i = _shots['d3i']!;
-    final int tlc = _shots['tlc']!;
-    final int tli = _shots['tli']!;
-    final int pts = _calcPts;
-
     return Container(
       decoration: const BoxDecoration(
         color: AppTheme.surface,
@@ -691,13 +696,8 @@ class _ShotBreakdownSheetState extends State<_ShotBreakdownSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Handle
-          Container(
-            width: 40, height: 4,
-            margin: const EdgeInsets.only(top: 12),
-            decoration: BoxDecoration(color: AppTheme.divider, borderRadius: BorderRadius.circular(2)),
-          ),
-          // Header
+          Container(width: 40, height: 4, margin: const EdgeInsets.only(top: 12),
+              decoration: BoxDecoration(color: AppTheme.divider, borderRadius: BorderRadius.circular(2))),
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
             child: Row(
@@ -705,15 +705,18 @@ class _ShotBreakdownSheetState extends State<_ShotBreakdownSheet> {
                 Container(
                   width: 36, height: 36,
                   decoration: BoxDecoration(color: AppTheme.primaryDim, borderRadius: BorderRadius.circular(10)),
-                  child: Center(child: Text('#${widget.playerNumber}', style: const TextStyle(color: AppTheme.primary, fontSize: 12, fontWeight: FontWeight.w800))),
+                  child: Center(child: Text('#${widget.playerNumber}',
+                      style: const TextStyle(color: AppTheme.primary, fontSize: 12, fontWeight: FontWeight.w800))),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(widget.playerName, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
-                      const Text('Desglose de tiros', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                      Text(widget.playerName,
+                          style: const TextStyle(color: AppTheme.textPrimary, fontSize: 16, fontWeight: FontWeight.w700)),
+                      Text('Tiros — Q${widget.quarter}',
+                          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
                     ],
                   ),
                 ),
@@ -726,42 +729,22 @@ class _ShotBreakdownSheetState extends State<_ShotBreakdownSheet> {
             ),
           ),
           const Divider(height: 1, color: AppTheme.divider),
-          // Body
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
             child: Column(
               children: [
-                _ShotRow(
-                  label: 'Dobles',
-                  sublabel: 'Tiros de 2 puntos',
-                  color: const Color(0xFF2ECC71),
-                  convValue: d2c,
-                  intValue: d2i,
-                  onConvChange: (int d) => _change('d2c', d),
-                  onIntChange:  (int d) => _change('d2i', d),
-                ),
+                _ShotRow(label: 'Dobles', sublabel: 'Tiros de 2 puntos', color: const Color(0xFF2ECC71),
+                    convValue: _shots['d2c']!, intValue: _shots['d2i']!,
+                    onConvChange: (d) => _change('d2c', d), onIntChange: (d) => _change('d2i', d)),
                 const SizedBox(height: 12),
-                _ShotRow(
-                  label: 'Triples',
-                  sublabel: 'Tiros de 3 puntos',
-                  color: const Color(0xFF9B59B6),
-                  convValue: d3c,
-                  intValue: d3i,
-                  onConvChange: (int d) => _change('d3c', d),
-                  onIntChange:  (int d) => _change('d3i', d),
-                ),
+                _ShotRow(label: 'Triples', sublabel: 'Tiros de 3 puntos', color: const Color(0xFF9B59B6),
+                    convValue: _shots['d3c']!, intValue: _shots['d3i']!,
+                    onConvChange: (d) => _change('d3c', d), onIntChange: (d) => _change('d3i', d)),
                 const SizedBox(height: 12),
-                _ShotRow(
-                  label: 'Tiros Libres',
-                  sublabel: '1 punto cada uno',
-                  color: const Color(0xFF3498DB),
-                  convValue: tlc,
-                  intValue: tli,
-                  onConvChange: (int d) => _change('tlc', d),
-                  onIntChange:  (int d) => _change('tli', d),
-                ),
+                _ShotRow(label: 'Tiros Libres', sublabel: '1 punto cada uno', color: const Color(0xFF3498DB),
+                    convValue: _shots['tlc']!, intValue: _shots['tli']!,
+                    onConvChange: (d) => _change('tlc', d), onIntChange: (d) => _change('tli', d)),
                 const SizedBox(height: 16),
-                // Calculated PTS
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   decoration: BoxDecoration(
@@ -775,18 +758,20 @@ class _ShotBreakdownSheetState extends State<_ShotBreakdownSheet> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Text('Puntos calculados', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
+                            const Text('Puntos calculados',
+                                style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontWeight: FontWeight.w600)),
                             const SizedBox(height: 2),
-                            Text('$d2c×2 + $d3c×3 + $tlc×1', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                            Text('${_shots['d2c']}×2 + ${_shots['d3c']}×3 + ${_shots['tlc']}×1',
+                                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
                           ],
                         ),
                       ),
-                      Text('$pts', style: const TextStyle(color: AppTheme.primary, fontSize: 28, fontWeight: FontWeight.w900)),
+                      Text('$_calcPts',
+                          style: const TextStyle(color: AppTheme.primary, fontSize: 28, fontWeight: FontWeight.w900)),
                     ],
                   ),
                 ),
                 const SizedBox(height: 16),
-                // Apply button
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
@@ -813,35 +798,25 @@ class _ShotBreakdownSheetState extends State<_ShotBreakdownSheet> {
   }
 }
 
-// ─── Shot row inside the breakdown sheet ─────────────────────────────────────
+// ─── Shot row ─────────────────────────────────────────────────────────────────
 
 class _ShotRow extends StatelessWidget {
-  final String label;
-  final String sublabel;
+  final String label, sublabel;
   final Color color;
-  final int convValue;
-  final int intValue;
-  final void Function(int) onConvChange;
-  final void Function(int) onIntChange;
+  final int convValue, intValue;
+  final void Function(int) onConvChange, onIntChange;
 
   const _ShotRow({
-    required this.label,
-    required this.sublabel,
-    required this.color,
-    required this.convValue,
-    required this.intValue,
-    required this.onConvChange,
-    required this.onIntChange,
+    required this.label, required this.sublabel, required this.color,
+    required this.convValue, required this.intValue,
+    required this.onConvChange, required this.onIntChange,
   });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-      decoration: BoxDecoration(
-        color: AppTheme.surfaceElevated,
-        borderRadius: BorderRadius.circular(16),
-      ),
+      decoration: BoxDecoration(color: AppTheme.surfaceElevated, borderRadius: BorderRadius.circular(16)),
       child: Row(
         children: [
           Expanded(
@@ -876,12 +851,7 @@ class _ShotCounter extends StatelessWidget {
   final Color color;
   final void Function(int) onChange;
 
-  const _ShotCounter({
-    required this.label,
-    required this.value,
-    required this.color,
-    required this.onChange,
-  });
+  const _ShotCounter({required this.label, required this.value, required this.color, required this.onChange});
 
   @override
   Widget build(BuildContext context) {
@@ -894,10 +864,9 @@ class _ShotCounter extends StatelessWidget {
           children: [
             _Btn(icon: Icons.remove_rounded, color: color, onTap: () => onChange(-1)),
             const SizedBox(width: 6),
-            SizedBox(
-              width: 28,
-              child: Text('$value', textAlign: TextAlign.center, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 20, fontWeight: FontWeight.w900)),
-            ),
+            SizedBox(width: 28,
+                child: Text('$value', textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppTheme.textPrimary, fontSize: 20, fontWeight: FontWeight.w900))),
             const SizedBox(width: 6),
             _Btn(icon: Icons.add_rounded, color: color, onTap: () => onChange(1)),
           ],

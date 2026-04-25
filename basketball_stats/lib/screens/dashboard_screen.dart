@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
+import 'player_stats_screen.dart';
 
 class DashboardScreen extends StatefulWidget {
   final AppRole role;
@@ -64,6 +65,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
       final pid = row['player_id'] as String;
       final player = row['players'] as Map<String, dynamic>;
       agg.putIfAbsent(pid, () => {
+        'player_id': pid,
         'name': '${player['first_name']} ${player['last_name']}',
         'number': player['number'],
         'games': 0, 'points': 0, 'assists': 0, 'rebounds': 0,
@@ -119,6 +121,16 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
   double _avg(Map<String, dynamic> p, String stat) =>
       (p[stat] as int) / (p['games'] as int);
+
+  void _openPlayer(BuildContext context, Map<String, dynamic> player) {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PlayerStatsScreen(
+        playerId: player['player_id'] as String,
+        playerName: player['name'] as String,
+        playerNumber: '${player['number'] ?? '-'}',
+      ),
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -183,6 +195,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           playerName: _topScorer?['name'] ?? '-',
                           value: _topScorer != null ? _avg(_topScorer!, 'points').toStringAsFixed(1) : '-',
                           games: '${_topScorer?['games'] ?? 0} partidos',
+                          onTap: _topScorer != null ? () => _openPlayer(context, _topScorer!) : null,
                         ),
                         _LeaderCard(
                           icon: Icons.swap_horiz_rounded,
@@ -192,6 +205,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           playerName: _topAssists?['name'] ?? '-',
                           value: _topAssists != null ? _avg(_topAssists!, 'assists').toStringAsFixed(1) : '-',
                           games: '${_topAssists?['games'] ?? 0} partidos',
+                          onTap: _topAssists != null ? () => _openPlayer(context, _topAssists!) : null,
                         ),
                         _LeaderCard(
                           icon: Icons.fitness_center_rounded,
@@ -201,6 +215,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           playerName: _topRebounds?['name'] ?? '-',
                           value: _topRebounds != null ? _avg(_topRebounds!, 'rebounds').toStringAsFixed(1) : '-',
                           games: '${_topRebounds?['games'] ?? 0} partidos',
+                          onTap: _topRebounds != null ? () => _openPlayer(context, _topRebounds!) : null,
                         ),
                         _RecordCard(wins: _wins, losses: _losses),
                       ],
@@ -398,16 +413,19 @@ class _LeaderCard extends StatelessWidget {
   final String playerName;
   final String value;
   final String games;
+  final VoidCallback? onTap;
 
   const _LeaderCard({
     required this.icon, required this.color, required this.statLabel,
     required this.playerNumber, required this.playerName,
-    required this.value, required this.games,
+    required this.value, required this.games, this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: AppTheme.surfaceElevated,
@@ -433,7 +451,8 @@ class _LeaderCard extends StatelessWidget {
           ]),
         ],
       ),
-    );
+    ),
+  );
   }
 }
 
