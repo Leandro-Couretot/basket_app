@@ -1,0 +1,754 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BEA Stats – Mockup Tiros</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0E0E18;
+    --surface:   #161627;
+    --elevated:  #1E1E32;
+    --primary:   #FF6B00;
+    --primary-dim: rgba(255,107,0,0.12);
+    --text:      #F0F0F0;
+    --muted:     #6B7280;
+    --divider:   #2A2A40;
+    --green:     #2ECC71;
+    --blue:      #3498DB;
+    --yellow:    #F39C12;
+    --red:       #E74C3C;
+    --purple:    #9B59B6;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 16px;
+    gap: 16px;
+  }
+
+  h1 {
+    font-size: 13px;
+    color: var(--muted);
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+
+  /* ── App shell ── */
+  .app {
+    width: 100%;
+    max-width: 480px;
+    background: var(--bg);
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid var(--divider);
+    box-shadow: 0 24px 64px rgba(0,0,0,0.6);
+  }
+
+  /* ── AppBar ── */
+  .appbar {
+    background: var(--surface);
+    padding: 14px 16px 10px;
+    border-bottom: 1px solid var(--divider);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .appbar-back {
+    color: var(--primary);
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .appbar-title { font-size: 14px; font-weight: 700; }
+  .appbar-sub   { font-size: 11px; color: var(--muted); }
+
+  /* ── Scoreboard ── */
+  .scoreboard {
+    background: var(--elevated);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .team-name {
+    flex: 1;
+    text-align: center;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--muted);
+    transition: color .2s;
+  }
+  .team-name.winning { color: var(--text); font-weight: 700; }
+  .score-box {
+    background: var(--bg);
+    border-radius: 12px;
+    padding: 8px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .score-num {
+    font-size: 32px;
+    font-weight: 900;
+    color: var(--text);
+    min-width: 36px;
+    text-align: center;
+    transition: color .15s, transform .1s;
+  }
+  .score-num.winning { color: var(--primary); }
+  .score-num.bump {
+    animation: bump .2s ease;
+  }
+  @keyframes bump {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.3); }
+    100% { transform: scale(1); }
+  }
+  .score-dash { color: var(--muted); font-size: 20px; }
+
+  /* ── Tabs ── */
+  .tabs {
+    display: flex;
+    border-bottom: 1px solid var(--divider);
+    background: var(--surface);
+  }
+  .tab {
+    flex: 1;
+    text-align: center;
+    padding: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: all .2s;
+  }
+  .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+  /* ── Players list ── */
+  .players { background: var(--bg); }
+  .player-row {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .player-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .player-num {
+    width: 36px; height: 36px;
+    background: var(--primary-dim);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 800; color: var(--primary);
+    flex-shrink: 0;
+  }
+  .player-name {
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+  }
+  .player-name:hover { color: var(--primary); }
+  .player-pts-badge {
+    font-size: 11px;
+    background: var(--primary-dim);
+    color: var(--primary);
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 700;
+  }
+  .hint-icon {
+    font-size: 13px;
+    color: var(--muted);
+    opacity: 0.5;
+  }
+
+  /* ── Stat counters ── */
+  .stat-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 8px;
+  }
+  .stat-card {
+    background: var(--elevated);
+    border-radius: 14px;
+    padding: 10px 6px;
+    text-align: center;
+    border: 1px solid transparent;
+  }
+  .stat-label {
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+    margin-bottom: 4px;
+  }
+  .stat-value {
+    font-size: 26px;
+    font-weight: 900;
+    color: var(--text);
+    line-height: 1;
+    margin-bottom: 8px;
+  }
+  .stat-btns {
+    display: flex;
+    justify-content: center;
+    gap: 6px;
+  }
+  .btn {
+    width: 34px; height: 34px;
+    border-radius: 10px;
+    border: none;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    font-weight: 700;
+    transition: transform .1s, opacity .1s;
+    color: white;
+  }
+  .btn:active { transform: scale(0.9); opacity: 0.8; }
+
+  /* ── Modal overlay ── */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: flex-end;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+  }
+  .modal-overlay.open { display: flex; animation: fadeIn .2s ease; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+  .modal {
+    width: 100%;
+    max-width: 480px;
+    background: var(--surface);
+    border-radius: 24px 24px 0 0;
+    padding: 0 0 32px;
+    animation: slideUp .25s ease;
+  }
+  @keyframes slideUp {
+    from { transform: translateY(100%); }
+    to   { transform: translateY(0); }
+  }
+
+  .modal-handle {
+    width: 40px; height: 4px;
+    background: var(--divider);
+    border-radius: 2px;
+    margin: 12px auto 0;
+  }
+  .modal-header {
+    display: flex;
+    align-items: center;
+    padding: 16px 20px 12px;
+    gap: 12px;
+    border-bottom: 1px solid var(--divider);
+  }
+  .modal-title  { font-size: 16px; font-weight: 700; }
+  .modal-sub    { font-size: 12px; color: var(--muted); }
+  .modal-close  {
+    margin-left: auto;
+    width: 32px; height: 32px;
+    background: var(--elevated);
+    border-radius: 50%;
+    border: none;
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .modal-close:hover { color: var(--text); }
+
+  .modal-body { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+
+  /* ── Shot rows in modal ── */
+  .shot-row {
+    background: var(--elevated);
+    border-radius: 16px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .shot-label {
+    flex: 1;
+  }
+  .shot-type {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .shot-sub {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .shot-counters {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .shot-counter {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .shot-counter-label {
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
+  }
+  .shot-counter-inner {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .shot-val {
+    font-size: 20px;
+    font-weight: 900;
+    min-width: 28px;
+    text-align: center;
+  }
+  .sbtn {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 16px;
+    font-weight: 700;
+    color: white;
+    display: flex; align-items: center; justify-content: center;
+    transition: transform .1s;
+  }
+  .sbtn:active { transform: scale(0.88); }
+
+  .shot-divider {
+    font-size: 16px;
+    color: var(--muted);
+    font-weight: 300;
+  }
+
+  /* ── PTS calculados ── */
+  .pts-calc {
+    background: var(--primary-dim);
+    border: 1px solid rgba(255,107,0,0.3);
+    border-radius: 14px;
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .pts-calc-label { font-size: 13px; color: var(--muted); font-weight: 600; }
+  .pts-calc-value { font-size: 28px; font-weight: 900; color: var(--primary); }
+  .pts-calc-formula { font-size: 11px; color: var(--muted); margin-top: 2px; }
+
+  /* ── Guardar btn ── */
+  .save-btn {
+    width: 100%;
+    background: var(--primary);
+    color: white;
+    border: none;
+    border-radius: 14px;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity .15s;
+  }
+  .save-btn:hover { opacity: 0.9; }
+  .save-btn:active { opacity: 0.8; }
+
+  /* ── Note ── */
+  .note {
+    max-width: 480px;
+    background: var(--elevated);
+    border-left: 3px solid var(--primary);
+    border-radius: 0 10px 10px 0;
+    padding: 12px 16px;
+    font-size: 12px;
+    color: var(--muted);
+    line-height: 1.6;
+  }
+  .note strong { color: var(--text); }
+</style>
+</head>
+<body>
+
+<h1>Mockup – Desglose de Tiros</h1>
+
+<!-- APP SHELL -->
+<div class="app">
+
+  <!-- AppBar -->
+  <div class="appbar">
+    <span class="appbar-back">‹</span>
+    <div>
+      <div class="appbar-title">Lakers vs Heat</div>
+      <div class="appbar-sub">Fecha 4</div>
+    </div>
+  </div>
+
+  <!-- Scoreboard -->
+  <div class="scoreboard">
+    <div class="team-name winning" id="home-label">Lakers</div>
+    <div class="score-box">
+      <div class="score-num winning" id="score-home">0</div>
+      <div class="score-dash">—</div>
+      <div class="score-num" id="score-away">0</div>
+    </div>
+    <div class="team-name" id="away-label">Heat</div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active">Lakers</div>
+    <div class="tab">Heat</div>
+  </div>
+
+  <!-- Players -->
+  <div class="players">
+
+    <!-- LeBron James -->
+    <div class="player-row" id="row-lebron">
+      <div class="player-header">
+        <div class="player-num">#23</div>
+        <div class="player-name" onclick="openModal('lebron')">
+          LeBron James
+          <span class="hint-icon" title="Ver desglose de tiros">⬆</span>
+          <span class="player-pts-badge" id="badge-lebron">0 PTS</span>
+        </div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-card" style="border-color:rgba(46,204,113,.25)">
+          <div class="stat-label" style="color:var(--green)">PTS</div>
+          <div class="stat-value" id="pts-lebron">0</div>
+          <div class="stat-btns">
+            <button class="btn" style="background:rgba(46,204,113,.2);color:var(--green)" onclick="changeStat('lebron','pts',-1)">−</button>
+            <button class="btn" style="background:rgba(46,204,113,.2);color:var(--green)" onclick="changeStat('lebron','pts',1)">+</button>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color:rgba(52,152,219,.25)">
+          <div class="stat-label" style="color:var(--blue)">AST</div>
+          <div class="stat-value" id="ast-lebron">0</div>
+          <div class="stat-btns">
+            <button class="btn" style="background:rgba(52,152,219,.2);color:var(--blue)" onclick="changeStat('lebron','ast',-1)">−</button>
+            <button class="btn" style="background:rgba(52,152,219,.2);color:var(--blue)" onclick="changeStat('lebron','ast',1)">+</button>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color:rgba(243,156,18,.25)">
+          <div class="stat-label" style="color:var(--yellow)">REB</div>
+          <div class="stat-value" id="reb-lebron">0</div>
+          <div class="stat-btns">
+            <button class="btn" style="background:rgba(243,156,18,.2);color:var(--yellow)" onclick="changeStat('lebron','reb',-1)">−</button>
+            <button class="btn" style="background:rgba(243,156,18,.2);color:var(--yellow)" onclick="changeStat('lebron','reb',1)">+</button>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color:rgba(231,76,60,.25)">
+          <div class="stat-label" style="color:var(--red)">FAL</div>
+          <div class="stat-value" id="fal-lebron">0</div>
+          <div class="stat-btns">
+            <button class="btn" style="background:rgba(231,76,60,.2);color:var(--red)" onclick="changeStat('lebron','fal',-1)">−</button>
+            <button class="btn" style="background:rgba(231,76,60,.2);color:var(--red)" onclick="changeStat('lebron','fal',1)">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Austin Reaves -->
+    <div class="player-row" id="row-reaves">
+      <div class="player-header">
+        <div class="player-num">#15</div>
+        <div class="player-name" onclick="openModal('reaves')">
+          Austin Reaves
+          <span class="hint-icon">⬆</span>
+          <span class="player-pts-badge" id="badge-reaves">0 PTS</span>
+        </div>
+      </div>
+      <div class="stat-row">
+        <div class="stat-card" style="border-color:rgba(46,204,113,.25)">
+          <div class="stat-label" style="color:var(--green)">PTS</div>
+          <div class="stat-value" id="pts-reaves">0</div>
+          <div class="stat-btns">
+            <button class="btn" style="background:rgba(46,204,113,.2);color:var(--green)" onclick="changeStat('reaves','pts',-1)">−</button>
+            <button class="btn" style="background:rgba(46,204,113,.2);color:var(--green)" onclick="changeStat('reaves','pts',1)">+</button>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color:rgba(52,152,219,.25)">
+          <div class="stat-label" style="color:var(--blue)">AST</div>
+          <div class="stat-value" id="ast-reaves">0</div>
+          <div class="stat-btns">
+            <button class="btn" style="background:rgba(52,152,219,.2);color:var(--blue)" onclick="changeStat('reaves','ast',-1)">−</button>
+            <button class="btn" style="background:rgba(52,152,219,.2);color:var(--blue)" onclick="changeStat('reaves','ast',1)">+</button>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color:rgba(243,156,18,.25)">
+          <div class="stat-label" style="color:var(--yellow)">REB</div>
+          <div class="stat-value" id="reb-reaves">0</div>
+          <div class="stat-btns">
+            <button class="btn" style="background:rgba(243,156,18,.2);color:var(--yellow)" onclick="changeStat('reaves','reb',-1)">−</button>
+            <button class="btn" style="background:rgba(243,156,18,.2);color:var(--yellow)" onclick="changeStat('reaves','reb',1)">+</button>
+          </div>
+        </div>
+        <div class="stat-card" style="border-color:rgba(231,76,60,.25)">
+          <div class="stat-label" style="color:var(--red)">FAL</div>
+          <div class="stat-value" id="fal-reaves">0</div>
+          <div class="stat-btns">
+            <button class="btn" style="background:rgba(231,76,60,.2);color:var(--red)" onclick="changeStat('reaves','fal',-1)">−</button>
+            <button class="btn" style="background:rgba(231,76,60,.2);color:var(--red)" onclick="changeStat('reaves','fal',1)">+</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /players -->
+</div><!-- /app -->
+
+<!-- NOTE -->
+<div class="note" style="max-width:480px;width:100%">
+  <strong>Cómo funciona:</strong><br>
+  Tocá el nombre de un jugador (o el ↑) para abrir el desglose de tiros.<br>
+  Los <strong>PTS se calculan solos</strong> desde los tiros y se sincronizan con el marcador.<br>
+  El +/- de PTS en la pantalla principal queda para correcciones rápidas.
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!-- MODAL                                                      -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-overlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <div class="modal-header">
+      <div class="player-num" id="modal-num">#23</div>
+      <div>
+        <div class="modal-title" id="modal-name">LeBron James</div>
+        <div class="modal-sub">Desglose de tiros</div>
+      </div>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+
+    <div class="modal-body">
+
+      <!-- Dobles -->
+      <div class="shot-row">
+        <div class="shot-label">
+          <div class="shot-type">Dobles</div>
+          <div class="shot-sub">Tiros de 2 puntos</div>
+        </div>
+        <div class="shot-counters">
+          <div class="shot-counter">
+            <div class="shot-counter-label" style="color:var(--green)">CONV</div>
+            <div class="shot-counter-inner">
+              <button class="sbtn" style="background:rgba(46,204,113,.2);color:var(--green)" onclick="changeShot('d2','conv',-1)">−</button>
+              <div class="shot-val" id="d2-conv" style="color:var(--green)">0</div>
+              <button class="sbtn" style="background:rgba(46,204,113,.2);color:var(--green)" onclick="changeShot('d2','conv',1)">+</button>
+            </div>
+          </div>
+          <div class="shot-divider">/</div>
+          <div class="shot-counter">
+            <div class="shot-counter-label" style="color:var(--muted)">INT</div>
+            <div class="shot-counter-inner">
+              <button class="sbtn" style="background:rgba(107,114,128,.15);color:var(--muted)" onclick="changeShot('d2','int',-1)">−</button>
+              <div class="shot-val" id="d2-int" style="color:var(--text)">0</div>
+              <button class="sbtn" style="background:rgba(107,114,128,.15);color:var(--muted)" onclick="changeShot('d2','int',1)">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Triples -->
+      <div class="shot-row">
+        <div class="shot-label">
+          <div class="shot-type">Triples</div>
+          <div class="shot-sub">Tiros de 3 puntos</div>
+        </div>
+        <div class="shot-counters">
+          <div class="shot-counter">
+            <div class="shot-counter-label" style="color:var(--purple)">CONV</div>
+            <div class="shot-counter-inner">
+              <button class="sbtn" style="background:rgba(155,89,182,.2);color:var(--purple)" onclick="changeShot('d3','conv',-1)">−</button>
+              <div class="shot-val" id="d3-conv" style="color:var(--purple)">0</div>
+              <button class="sbtn" style="background:rgba(155,89,182,.2);color:var(--purple)" onclick="changeShot('d3','conv',1)">+</button>
+            </div>
+          </div>
+          <div class="shot-divider">/</div>
+          <div class="shot-counter">
+            <div class="shot-counter-label" style="color:var(--muted)">INT</div>
+            <div class="shot-counter-inner">
+              <button class="sbtn" style="background:rgba(107,114,128,.15);color:var(--muted)" onclick="changeShot('d3','int',-1)">−</button>
+              <div class="shot-val" id="d3-int" style="color:var(--text)">0</div>
+              <button class="sbtn" style="background:rgba(107,114,128,.15);color:var(--muted)" onclick="changeShot('d3','int',1)">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tiros libres -->
+      <div class="shot-row">
+        <div class="shot-label">
+          <div class="shot-type">Tiros Libres</div>
+          <div class="shot-sub">1 punto cada uno</div>
+        </div>
+        <div class="shot-counters">
+          <div class="shot-counter">
+            <div class="shot-counter-label" style="color:var(--blue)">CONV</div>
+            <div class="shot-counter-inner">
+              <button class="sbtn" style="background:rgba(52,152,219,.2);color:var(--blue)" onclick="changeShot('tl','conv',-1)">−</button>
+              <div class="shot-val" id="tl-conv" style="color:var(--blue)">0</div>
+              <button class="sbtn" style="background:rgba(52,152,219,.2);color:var(--blue)" onclick="changeShot('tl','conv',1)">+</button>
+            </div>
+          </div>
+          <div class="shot-divider">/</div>
+          <div class="shot-counter">
+            <div class="shot-counter-label" style="color:var(--muted)">INT</div>
+            <div class="shot-counter-inner">
+              <button class="sbtn" style="background:rgba(107,114,128,.15);color:var(--muted)" onclick="changeShot('tl','int',-1)">−</button>
+              <div class="shot-val" id="tl-int" style="color:var(--text)">0</div>
+              <button class="sbtn" style="background:rgba(107,114,128,.15);color:var(--muted)" onclick="changeShot('tl','int',1)">+</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PTS calculados -->
+      <div class="pts-calc">
+        <div>
+          <div class="pts-calc-label">Puntos calculados</div>
+          <div class="pts-calc-formula" id="pts-formula">0×2 + 0×3 + 0×1</div>
+        </div>
+        <div class="pts-calc-value" id="pts-calculated">0</div>
+      </div>
+
+      <button class="save-btn" onclick="applyAndClose()">Aplicar al marcador</button>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  // ── State ──────────────────────────────────────────────────
+  const players = {
+    lebron: { name: 'LeBron James', num: '#23', pts:0, ast:0, reb:0, fal:0,
+              shots: { d2:{conv:0,int:0}, d3:{conv:0,int:0}, tl:{conv:0,int:0} } },
+    reaves: { name: 'Austin Reaves', num: '#15', pts:0, ast:0, reb:0, fal:0,
+              shots: { d2:{conv:0,int:0}, d3:{conv:0,int:0}, tl:{conv:0,int:0} } },
+  };
+
+  let currentPlayer = null;
+  const homeTeam = ['lebron','reaves'];
+
+  // ── Helpers ────────────────────────────────────────────────
+  function clamp(v) { return Math.max(0, Math.min(99, v)); }
+
+  function calcPts(p) {
+    return p.shots.d2.conv * 2 + p.shots.d3.conv * 3 + p.shots.tl.conv;
+  }
+
+  function updateScoreboard() {
+    const home = homeTeam.reduce((s, id) => s + players[id].pts, 0);
+    const away = 0;
+    const hs = document.getElementById('score-home');
+    const as = document.getElementById('score-away');
+    hs.textContent = home;
+    as.textContent = away;
+    hs.classList.toggle('winning', home >= away);
+    as.classList.toggle('winning', away > home);
+    document.getElementById('home-label').classList.toggle('winning', home >= away);
+    document.getElementById('away-label').classList.toggle('winning', away > home);
+    hs.classList.add('bump');
+    setTimeout(() => hs.classList.remove('bump'), 220);
+  }
+
+  function renderPlayer(id) {
+    const p = players[id];
+    ['pts','ast','reb','fal'].forEach(s => {
+      document.getElementById(`${s}-${id}`).textContent = p[s];
+    });
+    document.getElementById(`badge-${id}`).textContent = `${p.pts} PTS`;
+  }
+
+  // ── Main screen ────────────────────────────────────────────
+  function changeStat(id, stat, delta) {
+    players[id][stat] = clamp(players[id][stat] + delta);
+    renderPlayer(id);
+    if (stat === 'pts') updateScoreboard();
+  }
+
+  // ── Modal ──────────────────────────────────────────────────
+  function openModal(id) {
+    currentPlayer = id;
+    const p = players[id];
+    document.getElementById('modal-name').textContent = p.name;
+    document.getElementById('modal-num').textContent  = p.num;
+    // Populate shot values
+    ['d2','d3','tl'].forEach(type => {
+      ['conv','int'].forEach(sub => {
+        document.getElementById(`${type}-${sub}`).textContent = p.shots[type][sub];
+      });
+    });
+    updatePtsCalc();
+    document.getElementById('modal-overlay').classList.add('open');
+  }
+
+  function closeModal() {
+    document.getElementById('modal-overlay').classList.remove('open');
+    currentPlayer = null;
+  }
+
+  function closeModalOutside(e) {
+    if (e.target === document.getElementById('modal-overlay')) closeModal();
+  }
+
+  function changeShot(type, sub, delta) {
+    if (!currentPlayer) return;
+    const p = players[currentPlayer];
+    p.shots[type][sub] = clamp(p.shots[type][sub] + delta);
+    // conv can't exceed int
+    if (sub === 'conv' && p.shots[type].conv > p.shots[type].int) {
+      p.shots[type].int = p.shots[type].conv;
+      document.getElementById(`${type}-int`).textContent = p.shots[type].int;
+    }
+    document.getElementById(`${type}-${sub}`).textContent = p.shots[type][sub];
+    updatePtsCalc();
+  }
+
+  function updatePtsCalc() {
+    if (!currentPlayer) return;
+    const p = players[currentPlayer];
+    const pts = calcPts(p);
+    document.getElementById('pts-calculated').textContent = pts;
+    document.getElementById('pts-formula').textContent =
+      `${p.shots.d2.conv}×2 + ${p.shots.d3.conv}×3 + ${p.shots.tl.conv}×1`;
+  }
+
+  function applyAndClose() {
+    if (!currentPlayer) return;
+    const p = players[currentPlayer];
+    p.pts = calcPts(p);
+    renderPlayer(currentPlayer);
+    updateScoreboard();
+    closeModal();
+  }
+</script>
+
+</body>
+</html>
