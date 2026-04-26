@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
+import 'box_score_screen.dart';
 
 class FixtureScreen extends StatefulWidget {
   final AppRole role;
@@ -324,7 +325,18 @@ class _MatchCard extends StatelessWidget {
             const SizedBox(height: 12),
             Row(
               children: [
-                _ActionChip(icon: Icons.bar_chart_rounded, label: 'Box Score'),
+                _ActionChip(
+                  icon: Icons.bar_chart_rounded,
+                  label: 'Box Score',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => BoxScoreScreen(
+                      homeTeam: homeTeam,
+                      awayTeam: awayTeam,
+                      homeScore: homeScore,
+                      awayScore: awayScore,
+                    ),
+                  )),
+                ),
                 const SizedBox(width: 8),
                 _ActionChip(icon: Icons.share_rounded, label: 'Compartir'),
               ],
@@ -502,25 +514,29 @@ class _StatusChip extends StatelessWidget {
 class _ActionChip extends StatelessWidget {
   final IconData icon;
   final String label;
+  final VoidCallback? onTap;
 
-  const _ActionChip({required this.icon, required this.label});
+  const _ActionChip({required this.icon, required this.label, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: AppTheme.background,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppTheme.divider),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: AppTheme.textSecondary, size: 13),
-          const SizedBox(width: 4),
-          Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
-        ],
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppTheme.background,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: onTap != null ? AppTheme.primary.withValues(alpha: 0.4) : AppTheme.divider),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: onTap != null ? AppTheme.primary : AppTheme.textSecondary, size: 13),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(color: onTap != null ? AppTheme.primary : AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
+          ],
+        ),
       ),
     );
   }
