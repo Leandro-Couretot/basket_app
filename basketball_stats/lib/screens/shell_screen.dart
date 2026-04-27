@@ -3,8 +3,8 @@ import '../main.dart';
 import 'admin_screen.dart';
 import 'dashboard_screen.dart';
 import 'fixture_screen.dart';
+import 'news_screen.dart';
 import 'standings_screen.dart';
-import 'teams_screen.dart';
 
 class ShellScreen extends StatefulWidget {
   final AppRole role;
@@ -18,10 +18,10 @@ class _ShellScreenState extends State<ShellScreen> {
   int _currentIndex = 0;
 
   late final List<Widget> _screens = [
+    const NewsScreen(),
     DashboardScreen(role: widget.role),
     FixtureScreen(role: widget.role),
     StandingsScreen(),
-    TeamsScreen(role: widget.role),
     if (widget.role == AppRole.admin) const AdminScreen(),
   ];
 
@@ -61,13 +61,79 @@ class _BottomNav extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _NavItem(icon: Icons.home_rounded, label: 'Dashboard', index: 0, currentIndex: currentIndex, onTap: onTap),
-              _NavItem(icon: Icons.calendar_month_rounded, label: 'Fixture', index: 1, currentIndex: currentIndex, onTap: onTap),
-              _NavItem(icon: Icons.emoji_events_rounded, label: 'Posiciones', index: 2, currentIndex: currentIndex, onTap: onTap),
-              _NavItem(icon: Icons.groups_rounded, label: 'Equipos', index: 3, currentIndex: currentIndex, onTap: onTap),
+              _NavItemWithBadge(icon: Icons.notifications_rounded, label: 'Novedades', index: 0, currentIndex: currentIndex, onTap: onTap),
+              _NavItem(icon: Icons.home_rounded, label: 'Dashboard', index: 1, currentIndex: currentIndex, onTap: onTap),
+              _NavItem(icon: Icons.calendar_month_rounded, label: 'Fixture', index: 2, currentIndex: currentIndex, onTap: onTap),
+              _NavItem(icon: Icons.emoji_events_rounded, label: 'Posiciones', index: 3, currentIndex: currentIndex, onTap: onTap),
               if (isAdmin) _NavItem(icon: Icons.admin_panel_settings_rounded, label: 'Admin', index: 4, currentIndex: currentIndex, onTap: onTap),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _NavItemWithBadge extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final int index;
+  final int currentIndex;
+  final ValueChanged<int> onTap;
+
+  const _NavItemWithBadge({
+    required this.icon,
+    required this.label,
+    required this.index,
+    required this.currentIndex,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final bool selected = index == currentIndex;
+    return GestureDetector(
+      onTap: () => onTap(index),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? AppTheme.primaryDim : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(icon, color: selected ? AppTheme.primary : AppTheme.textSecondary, size: 24),
+                Positioned(
+                  top: -2,
+                  right: -4,
+                  child: Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: AppTheme.danger,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: AppTheme.surface, width: 1.5),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? AppTheme.primary : AppTheme.textSecondary,
+                fontSize: 10,
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
+              ),
+            ),
+          ],
         ),
       ),
     );

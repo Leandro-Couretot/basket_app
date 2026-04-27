@@ -105,6 +105,12 @@ class _BoxScoreScreenState extends State<BoxScoreScreen> {
                     players: _awayPlayers,
                     quarter: _quarter,
                   ),
+                  const SizedBox(height: 24),
+                  _TeamComparisonChart(
+                    homeTeam: widget.homeTeam,
+                    awayTeam: widget.awayTeam,
+                    quarter: _quarter,
+                  ),
                 ],
               ),
             ),
@@ -522,6 +528,245 @@ class _TeamTable extends StatelessWidget {
           fontSize: size,
           fontWeight: highlight ? FontWeight.w700 : weight,
         ),
+      ),
+    );
+  }
+}
+
+// ── Team comparison butterfly chart ──────────────────────────────────────────
+
+class _TeamComparisonChart extends StatelessWidget {
+  final String homeTeam;
+  final String awayTeam;
+  final int quarter;
+
+  const _TeamComparisonChart({
+    required this.homeTeam,
+    required this.awayTeam,
+    required this.quarter,
+  });
+
+  static const _totalMetrics = [
+    ('Puntos',          110, 99),
+    ('Rebotes',          37, 35),
+    ('Asistencias',      23, 19),
+    ('Pts. titulares',   98, 89),
+    ('Pts. banquillo',   12, 10),
+    ('Pérdidas',         14, 12),
+    ('Robos',             7,  5),
+    ('Tapones',           3,  4),
+    ('T. campo %',       47, 44),
+    ('Triples %',        38, 42),
+    ('T. dos %',         52, 48),
+    ('T. libres %',      78, 62),
+  ];
+
+  static const _quarterMetrics = [
+    // Q1: home 28 - away 25
+    [
+      ('Puntos',       28, 25),
+      ('Rebotes',      10,  9),
+      ('Asistencias',   6,  5),
+      ('Pérdidas',      4,  3),
+      ('Robos',         2,  1),
+      ('T. campo %',   52, 48),
+      ('Triples %',    40, 35),
+    ],
+    // Q2: home 24 - away 26
+    [
+      ('Puntos',       24, 26),
+      ('Rebotes',       8,  9),
+      ('Asistencias',   5,  6),
+      ('Pérdidas',      3,  4),
+      ('Robos',         1,  2),
+      ('T. campo %',   44, 50),
+      ('Triples %',    33, 44),
+    ],
+    // Q3: home 31 - away 22
+    [
+      ('Puntos',       31, 22),
+      ('Rebotes',      10,  8),
+      ('Asistencias',   7,  4),
+      ('Pérdidas',      3,  5),
+      ('Robos',         3,  1),
+      ('T. campo %',   58, 40),
+      ('Triples %',    50, 28),
+    ],
+    // Q4: home 27 - away 26
+    [
+      ('Puntos',       27, 26),
+      ('Rebotes',       9,  8),
+      ('Asistencias',   5,  4),
+      ('Pérdidas',      4,  4),
+      ('Robos',         1,  1),
+      ('T. campo %',   50, 48),
+      ('Triples %',    36, 38),
+    ],
+  ];
+
+  List<(String, int, int)> get _metrics =>
+      quarter == 0 ? _totalMetrics : _quarterMetrics[quarter - 1];
+
+  @override
+  Widget build(BuildContext context) {
+    final globalMax = _metrics
+        .expand((m) => [m.$2, m.$3])
+        .reduce((a, b) => a > b ? a : b)
+        .toDouble();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppTheme.surfaceElevated,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        children: [
+          // Header: team names + legend
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  homeTeam,
+                  style: const TextStyle(color: AppTheme.primary, fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ),
+              const SizedBox(width: 110),
+              Expanded(
+                child: Text(
+                  awayTeam,
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(color: Color(0xFF3EAFD4), fontWeight: FontWeight.w700, fontSize: 13),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Divider(color: AppTheme.divider, height: 1),
+          const SizedBox(height: 10),
+          // Metric rows — all share the same global max scale
+          ...(_metrics.map((m) => _MetricRow(
+                label: m.$1,
+                homeVal: m.$2,
+                awayVal: m.$3,
+                globalMax: globalMax,
+              ))),
+        ],
+      ),
+    );
+  }
+}
+
+class _MetricRow extends StatelessWidget {
+  final String label;
+  final int homeVal;
+  final int awayVal;
+  final double globalMax;
+
+  const _MetricRow({
+    required this.label,
+    required this.homeVal,
+    required this.awayVal,
+    required this.globalMax,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final homeFrac = globalMax > 0 ? homeVal / globalMax : 0.0;
+    final awayFrac = globalMax > 0 ? awayVal / globalMax : 0.0;
+    final homeWins = homeVal >= awayVal;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      child: Row(
+        children: [
+          // Home side: value then bar growing toward center
+          Expanded(
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 30,
+                  child: Text(
+                    '$homeVal',
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      color: homeWins ? AppTheme.primary : AppTheme.textSecondary,
+                      fontSize: 12,
+                      fontWeight: homeWins ? FontWeight.w700 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerRight,
+                    child: FractionallySizedBox(
+                      widthFactor: homeFrac,
+                      child: Container(
+                        height: 13,
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary,
+                          borderRadius: const BorderRadius.only(
+                            topLeft: Radius.circular(4),
+                            bottomLeft: Radius.circular(4),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Center label
+          Container(
+            width: 110,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+            ),
+          ),
+          // Away side: bar growing from center then value
+          Expanded(
+            child: Row(
+              children: [
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: FractionallySizedBox(
+                      widthFactor: awayFrac,
+                      child: Container(
+                        height: 13,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF3EAFD4),
+                          borderRadius: const BorderRadius.only(
+                            topRight: Radius.circular(4),
+                            bottomRight: Radius.circular(4),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 5),
+                SizedBox(
+                  width: 30,
+                  child: Text(
+                    '$awayVal',
+                    textAlign: TextAlign.left,
+                    style: TextStyle(
+                      color: !homeWins ? const Color(0xFF3EAFD4) : AppTheme.textSecondary,
+                      fontSize: 12,
+                      fontWeight: !homeWins ? FontWeight.w700 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
