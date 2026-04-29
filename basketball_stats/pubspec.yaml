@@ -12,6 +12,7 @@ dependencies:
   csv: ^6.0.0
   fl_chart: ^0.68.0
   supabase_flutter: ^2.8.4
+  url_launcher: ^6.3.0
 
 flutter:
   uses-material-design: true

@@ -20,6 +20,24 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
   final Map<int, Map<String, Map<String, int>>> _quarterStats = {1: {}, 2: {}, 3: {}, 4: {}};
   int _currentQuarter = 1;
 
+  // Referees
+  String? _refPrincipal;
+  String? _refAss1;
+  String? _refAss2;
+
+  static const _referees = [
+    'Carlos Méndez',
+    'Roberto Sosa',
+    'Andrés Valdez',
+    'Miguel Torres',
+    'Lucas Fernández',
+    'Pablo Herrera',
+    'Diego Suárez',
+    'Martín Gómez',
+    'Sebastián Ruiz',
+    'Nicolás Peralta',
+  ];
+
   bool _loadingMatches = true;
   bool _loadingPlayers = false;
 
@@ -138,6 +156,26 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
     );
   }
 
+  void _openRefereesSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => _RefereesSheet(
+        referees: _referees,
+        principal: _refPrincipal,
+        ass1: _refAss1,
+        ass2: _refAss2,
+        onSave: (p, a1, a2) => setState(() {
+          _refPrincipal = p;
+          _refAss1 = a1;
+          _refAss2 = a2;
+        }),
+      ),
+    );
+  }
+
   void _switchQuarter(int q) {
     // Pre-populate new quarter with empty stats if needed
     for (final p in [..._playersHome, ..._playersAway]) {
@@ -188,6 +226,12 @@ class _LiveStatsScreenState extends State<LiveStatsScreen> with SingleTickerProv
             home: _qScore(i + 1, _playersHome),
             away: _qScore(i + 1, _playersAway),
           )),
+        ),
+        _RefereesBar(
+          principal: _refPrincipal,
+          ass1: _refAss1,
+          ass2: _refAss2,
+          onTap: () => _openRefereesSheet(),
         ),
         _QuarterSelector(
           current: _currentQuarter,
@@ -870,6 +914,235 @@ class _ShotCounter extends StatelessWidget {
             const SizedBox(width: 6),
             _Btn(icon: Icons.add_rounded, color: color, onTap: () => onChange(1)),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+// ── Referees bar ──────────────────────────────────────────────────────────────
+
+class _RefereesBar extends StatelessWidget {
+  final String? principal;
+  final String? ass1;
+  final String? ass2;
+  final VoidCallback onTap;
+
+  const _RefereesBar({required this.principal, required this.ass1, required this.ass2, required this.onTap});
+
+  bool get _assigned => principal != null;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        color: AppTheme.surface,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+        child: Row(
+          children: [
+            const Icon(Icons.sports_rounded, color: AppTheme.textSecondary, size: 15),
+            const SizedBox(width: 8),
+            Expanded(
+              child: _assigned
+                  ? Text(
+                      '${_short(principal!)}  ·  ${_short(ass1!)}  ·  ${_short(ass2!)}',
+                      style: const TextStyle(color: AppTheme.textPrimary, fontSize: 12),
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  : const Text('Asignar árbitros', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: _assigned ? AppTheme.success.withValues(alpha: 0.12) : AppTheme.primary.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                _assigned ? 'ASIGNADOS' : 'ASIGNAR',
+                style: TextStyle(
+                  color: _assigned ? AppTheme.success : AppTheme.primary,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  String _short(String name) {
+    final parts = name.split(' ');
+    return parts.length >= 2 ? '${parts[0][0]}. ${parts[1]}' : name;
+  }
+}
+
+// ── Referees sheet ────────────────────────────────────────────────────────────
+
+class _RefereesSheet extends StatefulWidget {
+  final List<String> referees;
+  final String? principal;
+  final String? ass1;
+  final String? ass2;
+  final void Function(String, String, String) onSave;
+
+  const _RefereesSheet({
+    required this.referees,
+    required this.principal,
+    required this.ass1,
+    required this.ass2,
+    required this.onSave,
+  });
+
+  @override
+  State<_RefereesSheet> createState() => _RefereesSheetState();
+}
+
+class _RefereesSheetState extends State<_RefereesSheet> {
+  String? _principal;
+  String? _ass1;
+  String? _ass2;
+
+  @override
+  void initState() {
+    super.initState();
+    _principal = widget.principal;
+    _ass1 = widget.ass1;
+    _ass2 = widget.ass2;
+  }
+
+  bool get _valid => _principal != null && _ass1 != null && _ass2 != null
+      && _principal != _ass1 && _principal != _ass2 && _ass1 != _ass2;
+
+  List<String> _available(String? current) => widget.referees
+      .where((r) => r == current || (r != _principal && r != _ass1 && r != _ass2))
+      .toList();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(width: 36, height: 4,
+                  decoration: BoxDecoration(color: AppTheme.divider, borderRadius: BorderRadius.circular(2))),
+            ),
+            const SizedBox(height: 16),
+            const Text('Árbitros del partido',
+                style: TextStyle(color: AppTheme.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            const Text('Los árbitros quedan registrados en el acta oficial',
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+            const SizedBox(height: 24),
+            _RefereeDropdown(
+              label: 'Árbitro Principal',
+              icon: Icons.sports_rounded,
+              value: _principal,
+              options: _available(_principal),
+              onChanged: (v) => setState(() => _principal = v),
+            ),
+            const SizedBox(height: 16),
+            _RefereeDropdown(
+              label: 'Árbitro Asistente 1',
+              icon: Icons.sports_outlined,
+              value: _ass1,
+              options: _available(_ass1),
+              onChanged: (v) => setState(() => _ass1 = v),
+            ),
+            const SizedBox(height: 16),
+            _RefereeDropdown(
+              label: 'Árbitro Asistente 2',
+              icon: Icons.sports_outlined,
+              value: _ass2,
+              options: _available(_ass2),
+              onChanged: (v) => setState(() => _ass2 = v),
+            ),
+            const SizedBox(height: 28),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: _valid
+                    ? () {
+                        widget.onSave(_principal!, _ass1!, _ass2!);
+                        Navigator.pop(context);
+                      }
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppTheme.primary,
+                  disabledBackgroundColor: AppTheme.surfaceElevated,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                ),
+                child: Text(
+                  'Confirmar árbitros',
+                  style: TextStyle(
+                    color: _valid ? Colors.white : AppTheme.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RefereeDropdown extends StatelessWidget {
+  final String label;
+  final IconData icon;
+  final String? value;
+  final List<String> options;
+  final ValueChanged<String?> onChanged;
+
+  const _RefereeDropdown({
+    required this.label,
+    required this.icon,
+    required this.value,
+    required this.options,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(icon, color: AppTheme.textSecondary, size: 14),
+            const SizedBox(width: 6),
+            Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w500)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        Container(
+          decoration: BoxDecoration(
+            color: AppTheme.surfaceElevated,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: value,
+              hint: const Text('Seleccionar árbitro', style: TextStyle(color: AppTheme.textSecondary, fontSize: 14)),
+              isExpanded: true,
+              dropdownColor: AppTheme.surfaceElevated,
+              icon: const Icon(Icons.expand_more_rounded, color: AppTheme.textSecondary),
+              items: options.map((r) => DropdownMenuItem(
+                value: r,
+                child: Text(r, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14)),
+              )).toList(),
+              onChanged: onChanged,
+            ),
+          ),
         ),
       ],
     );

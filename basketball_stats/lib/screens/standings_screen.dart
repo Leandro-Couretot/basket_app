@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../main.dart';
+import 'team_detail_screen.dart';
 
 class _Standing {
   final int pos;
+  final String teamId;
   final String team;
   final int played;
   final int wins;
@@ -13,6 +15,7 @@ class _Standing {
 
   _Standing({
     required this.pos,
+    required this.teamId,
     required this.team,
     required this.played,
     required this.wins,
@@ -111,6 +114,7 @@ class _StandingsScreenState extends State<StandingsScreen> {
         final l = s['l'] as int;
         return _Standing(
           pos: e.key + 1,
+          teamId: e.value.key,
           team: s['name'] as String,
           played: w + l,
           wins: w,
@@ -221,7 +225,16 @@ class _StandingsTable extends StatelessWidget {
           const Divider(height: 1),
           ...standings.asMap().entries.map((e) => Column(
                 children: [
-                  _TeamRow(standing: e.value, index: e.key),
+                  _TeamRow(
+                    standing: e.value,
+                    index: e.key,
+                    onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                      builder: (_) => TeamDetailScreen(
+                        teamId: e.value.teamId,
+                        teamName: e.value.team,
+                      ),
+                    )),
+                  ),
                   if (e.key < standings.length - 1) const Divider(height: 1),
                 ],
               )),
@@ -230,6 +243,7 @@ class _StandingsTable extends StatelessWidget {
     );
   }
 }
+
 
 class _TableHeader extends StatelessWidget {
   @override
@@ -263,17 +277,20 @@ class _TableHeader extends StatelessWidget {
 class _TeamRow extends StatelessWidget {
   final _Standing standing;
   final int index;
-  const _TeamRow({required this.standing, required this.index});
+  final VoidCallback onTap;
+  const _TeamRow({required this.standing, required this.index, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
     final isFirst = standing.pos == 1;
     final diffPositive = standing.diff > 0;
 
-    return Container(
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
-        color: isFirst ? AppTheme.primary.withOpacity(0.06) : Colors.transparent,
+        color: isFirst ? AppTheme.primary.withValues(alpha: 0.06) : Colors.transparent,
         borderRadius: index == 0
             ? const BorderRadius.vertical(top: Radius.circular(16))
             : BorderRadius.zero,
@@ -318,8 +335,11 @@ class _TeamRow extends StatelessWidget {
               textAlign: TextAlign.center,
             ),
           ),
+          const SizedBox(width: 4),
+          const Icon(Icons.chevron_right_rounded, color: AppTheme.textSecondary, size: 16),
         ],
       ),
+    ),
     );
   }
 

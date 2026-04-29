@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../main.dart';
+import 'box_score_screen.dart';
+import 'news_screen.dart';
 
 class FixtureScreen extends StatefulWidget {
   final AppRole role;
@@ -232,6 +235,7 @@ class _MatchCard extends StatelessWidget {
     final homeScore = match['home_score'] as int;
     final awayScore = match['away_score'] as int;
     final date = _formatDate(match['match_date'] as String);
+    final hasNews = affectedRounds.contains(match['round'] as int?);
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -247,6 +251,23 @@ class _MatchCard extends StatelessWidget {
               Text(date, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
               Row(
                 children: [
+                  if (hasNews)
+                    Container(
+                      margin: const EdgeInsets.only(right: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.notifications_rounded, color: Color(0xFFF59E0B), size: 10),
+                          SizedBox(width: 3),
+                          Text('NOVEDAD', style: TextStyle(color: Color(0xFFF59E0B), fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.4)),
+                        ],
+                      ),
+                    ),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
@@ -324,9 +345,37 @@ class _MatchCard extends StatelessWidget {
             const SizedBox(height: 12),
             Row(
               children: [
-                _ActionChip(icon: Icons.bar_chart_rounded, label: 'Box Score'),
+                _ActionChip(
+                  icon: Icons.bar_chart_rounded,
+                  label: 'Box Score',
+                  onTap: () => Navigator.of(context).push(MaterialPageRoute(
+                    builder: (_) => BoxScoreScreen(
+                      homeTeam: homeTeam,
+                      awayTeam: awayTeam,
+                      homeScore: homeScore,
+                      awayScore: awayScore,
+                    ),
+                  )),
+                ),
                 const SizedBox(width: 8),
-                _ActionChip(icon: Icons.share_rounded, label: 'Compartir'),
+                _ActionChip(
+                  icon: Icons.share_rounded,
+                  label: 'Compartir',
+                  onTap: () => showModalBottomSheet(
+                    context: context,
+                    backgroundColor: AppTheme.surface,
+                    shape: const RoundedRectangleBorder(
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    ),
+                    builder: (_) => _ShareSheet(
+                      homeTeam: homeTeam,
+                      awayTeam: awayTeam,
+                      homeScore: homeScore,
+                      awayScore: awayScore,
+                      date: date,
+                    ),
+                  ),
+                ),
               ],
             ),
           ],
@@ -502,25 +551,200 @@ class _StatusChip extends StatelessWidget {
 class _ActionChip extends StatelessWidget {
   final IconData icon;
   final String label;
+  final VoidCallback? onTap;
 
-  const _ActionChip({required this.icon, required this.label});
+  const _ActionChip({required this.icon, required this.label, this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: AppTheme.background,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppTheme.divider),
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: AppTheme.background,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: onTap != null ? AppTheme.primary.withValues(alpha: 0.4) : AppTheme.divider),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: onTap != null ? AppTheme.primary : AppTheme.textSecondary, size: 13),
+            const SizedBox(width: 4),
+            Text(label, style: TextStyle(color: onTap != null ? AppTheme.primary : AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
+          ],
+        ),
       ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: AppTheme.textSecondary, size: 13),
-          const SizedBox(width: 4),
-          Text(label, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11, fontWeight: FontWeight.w600)),
-        ],
+    );
+  }
+}
+
+// ── Share sheet ───────────────────────────────────────────────────────────────
+
+class _ShareSheet extends StatelessWidget {
+  final String homeTeam;
+  final String awayTeam;
+  final int homeScore;
+  final int awayScore;
+  final String date;
+
+  const _ShareSheet({
+    required this.homeTeam,
+    required this.awayTeam,
+    required this.homeScore,
+    required this.awayScore,
+    required this.date,
+  });
+
+  String get _shareText =>
+      '🏀 $homeTeam $homeScore - $awayScore $awayTeam\n'
+      '📅 $date\n'
+      '📊 Ver estadísticas completas: basketapp.pluxow.com';
+
+  Future<void> _openWhatsApp(BuildContext context) async {
+    final encoded = Uri.encodeComponent(_shareText);
+    final uri = Uri.parse('https://wa.me/?text=$encoded');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No se pudo abrir WhatsApp')),
+        );
+      }
+    }
+  }
+
+  void _comingSoon(BuildContext context, String feature) {
+    Navigator.pop(context);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('$feature — próximamente'),
+        backgroundColor: AppTheme.surfaceElevated,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 36, height: 4,
+                decoration: BoxDecoration(color: AppTheme.divider, borderRadius: BorderRadius.circular(2)),
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text('Compartir resultado', style: TextStyle(color: AppTheme.textPrimary, fontSize: 17, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 4),
+            Text(
+              '$homeTeam $homeScore – $awayScore $awayTeam',
+              style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+            ),
+            const SizedBox(height: 20),
+            _ShareOption(
+              icon: Icons.chat_rounded,
+              color: const Color(0xFF25D366),
+              label: 'WhatsApp',
+              subtitle: 'Enviar resultado por WhatsApp',
+              onTap: () {
+                Navigator.pop(context);
+                _openWhatsApp(context);
+              },
+            ),
+            const SizedBox(height: 10),
+            _ShareOption(
+              icon: Icons.camera_alt_rounded,
+              color: const Color(0xFFE1306C),
+              label: 'Instagram',
+              subtitle: 'Compartir en Stories',
+              onTap: () => _comingSoon(context, 'Instagram'),
+              comingSoon: true,
+            ),
+            const SizedBox(height: 10),
+            _ShareOption(
+              icon: Icons.forum_rounded,
+              color: AppTheme.primary,
+              label: 'Chat de la app',
+              subtitle: 'Enviar al chat del equipo',
+              onTap: () => _comingSoon(context, 'Chat interno'),
+              comingSoon: true,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShareOption extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final String subtitle;
+  final VoidCallback onTap;
+  final bool comingSoon;
+
+  const _ShareOption({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.subtitle,
+    required this.onTap,
+    this.comingSoon = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: AppTheme.surfaceElevated,
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 42, height: 42,
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(icon, color: color, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(label, style: const TextStyle(color: AppTheme.textPrimary, fontWeight: FontWeight.w600, fontSize: 14)),
+                  Text(subtitle, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                ],
+              ),
+            ),
+            if (comingSoon)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceElevated,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: AppTheme.divider),
+                ),
+                child: const Text('Próximamente', style: TextStyle(color: AppTheme.textSecondary, fontSize: 10, fontWeight: FontWeight.w500)),
+              )
+            else
+              const Icon(Icons.arrow_forward_ios_rounded, color: AppTheme.textSecondary, size: 14),
+          ],
+        ),
       ),
     );
   }
